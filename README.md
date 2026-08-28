@@ -1,77 +1,130 @@
-﻿# Personal Librarian
+# Personal Librarian
 
-Personal Librarian is a local-first, privacy-oriented, catalogue-driven desktop application
-for preserving, organising, searching and protecting personal digital material. It is
-non-destructive by design: catalogue organisation and review do not alter source media.
+A local-first, privacy-focused desktop application for cataloguing, analysing, organising, and protecting personal photo and video libraries without surrendering control of the underlying files.
 
-Photographs and videos are the first operational priority. Future expansion may include documents, scans, saved web content, notes and locally assisted AI search.
+[![CI](https://github.com/dreamingfree09/personal-librarian/actions/workflows/ci.yml/badge.svg)](https://github.com/dreamingfree09/personal-librarian/actions/workflows/ci.yml)
+![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white)
+![UI: PySide6](https://img.shields.io/badge/UI-PySide6-41CD52?logo=qt&logoColor=white)
+![Database: SQLite](https://img.shields.io/badge/Database-SQLite-003B57?logo=sqlite&logoColor=white)
+![Status: pre-1.0 RC7](https://img.shields.io/badge/Status-pre--1.0%20RC7-orange)
 
-## Canonical Project Definition
+Personal Librarian builds an explicit catalogue over media that remains outside the repository. It separates analysis, review, owner decisions, and safe action planning so that discovering a duplicate or proposing an organisation change never silently changes a file.
 
-Before making substantial architectural or implementation changes, read:
+## Why Personal Librarian?
 
-- `PROJECT_TRUTH.md`
+Personal media rarely lives in one clean location. A library may be fragmented across local disks, cloud-sync folders, phone transfers, exports, duplicate copies, and backup drives. File browsers show where files are; they do not reliably explain which copies are identical, what evidence supports a date, or which organisation choices an owner has approved.
 
-`PROJECT_TRUTH.md` is the canonical architectural source of truth for this project.
+Personal Librarian responds with a few strict design choices:
 
-The frozen initial architecture baseline is retained as:
+- **Local-first:** core catalogue and desktop workflows run locally.
+- **Catalogue-first:** physical files are represented as evidence-bearing catalogue records before organisation decisions are made.
+- **Non-destructive:** analysis is not authority to move, rename, overwrite, or delete media.
+- **Evidence-driven:** exact hashes, similarity evidence, dates, provenance, and decisions remain inspectable.
+- **Owner-controlled:** nomination and approval are explicit, separate steps.
+- **Auditable:** decisions and logical organisation history are append-only where the data model requires it.
+- **Externally rooted:** media, catalogue databases, thumbnails, inventories, and backups live outside the source tree.
 
-- `PROJECT_TRUTH.v0.2.BASELINE.RECONSTRUCTED.md`
+## Implemented features
 
-## Safety Principle
+The current public source includes:
 
-`Discover -> Copy -> Verify -> Analyse -> Recommend -> Approve -> Plan -> Preflight -> Act -> Verify`
+- a schema-10 SQLite catalogue of physical instances and content identities;
+- reproducible inventory, SHA-256 exact-duplicate, and perceptual-similarity analysis pipelines;
+- bounded exact-duplicate and similar-content review;
+- explicit owner nomination, approval, rejection, supersession, and abstention records;
+- preferred-date evidence, Year shelves, and explicit Unknown Date handling;
+- manual Albums and cross-year Collections;
+- immutable, auditable logical-organisation History;
+- action-plan preflight and read-only plan visibility in the desktop;
+- constrained exact-duplicate quarantine and restoration foundations;
+- catalogue backup, verification, recovery staging, and independent local disaster-recovery checks;
+- a PySide6 desktop interface and a comprehensive command-line interface; and
+- Windows one-folder and release packaging tooling.
 
-Personal Librarian is preservation-first. Destructive operations must not be introduced casually.
+Physical media organisation is not presented as an automatic feature. The current workflow is deliberately catalogue-led and non-destructive.
 
-## Repository Boundary
+### Planned or future work
 
-This repository contains application code, documentation, tests, scripts and configuration.
+Future work is separate from the implemented feature set and requires its own design and safety review. Candidate areas include richer EXIF capture-date evidence, video metadata, trusted sidecar or source metadata, improved semantic search or locally assisted AI, and carefully controlled physical-organisation workflows.
 
-It must not contain the user's Personal Library, private media, personal documents, secrets, AI models, generated caches or production data.
+## Safety model
 
-Catalogue databases, backups, thumbnails, generated inventories, release builds and the
-personal-data root are external to this repository. The application does not bootstrap or
-silently select a production catalogue.
+The preservation-first operating principle is:
 
-## Current Phase
+> Discover → Copy → Verify → Analyse → Recommend → Approve → Plan → Preflight → Act → Verify
 
-M30 - Preferred Date Evidence and Cross-Year Collections Design/Foundation - COMPLETE
+Analysis never grants permission to mutate media. Review, owner decisions, planning, preflight, and execution are distinct stages. Media paths are not silently reorganised, production data is kept outside the repository, and destructive functionality is deliberately constrained. Existing quarantine and recovery operations require explicit context and confirmation; there is no generic delete or overwrite path.
 
-The project is pre-1.0. M30 completed the explicit, auditable preferred-date evidence foundation, schema-10
-cross-year Collections services and desktop integration, canonical RC7 packaging, and the
-initial catalogue-only production population. All 69,444 eligible physical instances have
-one checkpoint; 8,843 identities are resolved, 47,284 remain safely Unknown, and none need
-review. Richer date evidence from EXIF, video capture timestamps and trusted sidecar metadata,
-along with semantic/AI analysis and physical media reorganisation, is future separately
-approved work. Organisation does not alter media.
+## Architecture
 
-The current source/package version is `0.1.0rc7` and the current catalogue schema is 10.
-RC7 build artefacts are local generated output; they are not tracked in this source repository
-and are not publication assets unless separately approved for a future GitHub Release.
+```text
+Sources / media
+       ↓
+Physical instances
+       ↓
+Content identities
+       ↓
+Evidence and analysis
+       ↓
+Preferred state / review
+       ↓
+Owner decisions
+       ↓
+Plans / safe actions
+```
 
-## Development setup
+- **Source media** is the owner's external file content and remains the preservation authority.
+- **The catalogue** records physical instances, logical identities, evidence, state, and provenance.
+- **Logical organisation** uses dates, Albums, and Collections without changing source paths.
+- **Physical organisation** concerns file placement and is intentionally a separate, more constrained workflow.
 
-Python 3.13 is required. The desktop uses PySide6, and perceptual image analysis uses Pillow
-and NumPy; no GPU or separate scientific-computing stack is required. Windows PowerShell is
-required for the supplied Windows packaging scripts.
+See [PROJECT_TRUTH.md](PROJECT_TRUTH.md) for the canonical architecture and safety boundaries.
+
+## Current status
+
+| Item | Status |
+| --- | --- |
+| Source/package version | `0.1.0rc7` |
+| Catalogue schema | 10 |
+| Current milestone | M30 complete |
+| Initial catalogue-only preferred-date population | Complete |
+| Maturity | Pre-1.0 release candidate |
+
+RC7 source and packaging tools are present, but this repository does not currently offer an approved binary download or GitHub Release. Pre-1.0 interfaces and support policy may evolve.
+
+## Screenshots
+
+Screenshots will be added once a sanitized demonstration catalogue is available. No private production screenshots are used. See the [screenshot policy](docs/screenshots/README.md).
+
+## Quick start
+
+Personal Librarian currently targets Windows and requires Python 3.13.
 
 ```powershell
+git clone https://github.com/dreamingfree09/personal-librarian.git
+cd personal-librarian
+
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-For Windows packaging, install the build-only extra:
+Confirm the installed CLI, launch against an existing Personal Librarian application-data root, and run the synthetic test suite:
 
 ```powershell
-python -m pip install -e '.[build]'
+personal-librarian version
+personal-librarian desktop --app-data-root '<data-root>'
+python -m unittest discover -s tests -v
 ```
 
-## Desktop review interface
+Do not substitute an arbitrary media folder for `<data-root>`; desktop startup expects an existing validated catalogue layout, as explained below.
 
-M23 adds a local PySide6 desktop interface over the existing production catalogue and
-backend services. Launch it with explicit roots:
+## Desktop usage
+
+The source-installed desktop command requires an existing application-data root:
 
 ```powershell
 personal-librarian desktop `
@@ -79,114 +132,86 @@ personal-librarian desktop `
   --independent-backup-root '<backup-root>'
 ```
 
-The interface provides a bounded year-centred Library, preferred-date evidence detail,
-cross-year Collections, confirmed manual album/tag organisation, read-only organisation
-history, bounded exact/similar review, append-only owner canonical decisions, and read-only
-plans, quarantine, backup, and recovery visibility. Nomination and approval are separate
-confirmed actions. Delete, generic execution, GUI quarantine/restore, catalogue restore,
-and physical organisation are unavailable.
+The independent-backup root is optional. The application-data root is not: it must already contain a valid Personal Librarian catalogue. The program does not create, bootstrap, or silently choose a production catalogue during desktop startup. Read the [canonical project definition](PROJECT_TRUTH.md) before pointing operational commands at important data.
 
-The standalone one-folder build launches directly from:
+The packaged desktop launcher can present a folder picker, but it applies the same rule: only an existing validated application-data root is accepted.
+
+Explore the CLI without touching a catalogue:
 
 ```powershell
-dist\PersonalLibrarian\PersonalLibrarian.exe `
-  --app-data-root '<data-root>' `
-  --independent-backup-root '<backup-root>'
+personal-librarian --help
+personal-librarian desktop --help
+personal-librarian doctor
 ```
 
-If launched without arguments, it asks the owner to select an existing application-data
-root and optional independent-backup root. It never bootstraps a catalogue. Production
-data remains external and must not be copied into the distribution.
+## Build and package
 
-Build on Windows with:
+Install the build-only dependency set:
+
+```powershell
+python -m pip install -e '.[build]'
+```
+
+Build the Windows one-folder application:
 
 ```powershell
 .\packaging\build_windows.ps1
 ```
 
-Build the complete local release candidate, including the one-folder build, portable ZIP,
-SHA-256 files, and JSON manifest, with:
+Build the local release package, including the portable ZIP, checksums, and manifest:
 
 ```powershell
 .\packaging\build_release.ps1
 ```
 
-Generated output under `build\`, `dist\`, and `release\` is ignored by Git and must not be
-committed to the source repository. Extract the
-versioned ZIP to a new folder and keep its `PersonalLibrarian` contents together. Launch
-`PersonalLibrarian.exe` with no arguments to select existing external roots, or provide
-the explicit `--app-data-root` and optional `--independent-backup-root` arguments shown
-above. Neither Python nor this repository is required on the target machine.
+The release wrapper is RC7-specific and records the frozen RC7 build provenance in its generated manifest. Generated output under `build/`, `dist/`, and `release/` is ignored and must not be committed. Packaging is a local operation; no binary is published by these instructions.
 
-Run the CLI:
+## Repository structure
 
-```powershell
-personal-librarian version
-personal-librarian doctor
-personal-librarian config show
-personal-librarian safety check-path '<path>'
-personal-librarian catalogue init --database '<data-root>\catalogue.sqlite3'
-personal-librarian catalogue status --database '<data-root>\catalogue.sqlite3'
-personal-librarian catalogue import-evidence --help
-personal-librarian inventory scan --help
-personal-librarian hash sha256 --help
-personal-librarian exact-duplicates report --help
-personal-librarian pipeline reconcile --help
-personal-librarian similarity hash --help
-personal-librarian similarity analyse --help
-personal-librarian similarity report --help
-personal-librarian similarity reconcile --help
-personal-librarian review exact list --help
-personal-librarian review exact show --help
-personal-librarian review similar list --help
-personal-librarian review similar show --help
-personal-librarian decision nominate --help
-personal-librarian decision approve --help
-personal-librarian decision reject --help
-personal-librarian decision supersede --help
-personal-librarian decision abstain --help
-personal-librarian decision current --help
-personal-librarian decision history --help
-personal-librarian albums list --help
-personal-librarian albums create --help
-personal-librarian albums show --help
-personal-librarian albums rename --help
-personal-librarian albums archive --help
-personal-librarian albums restore --help
-personal-librarian albums add-content --help
-personal-librarian albums remove-content --help
-personal-librarian albums members --help
-personal-librarian albums for-content --help
-personal-librarian albums history --help
-personal-librarian plan create --help
-personal-librarian plan list --help
-personal-librarian plan show --help
-personal-librarian plan preflight --help
-personal-librarian plan report --help
-personal-librarian plan invalidate --help
-personal-librarian quarantine execute --help
-personal-librarian quarantine status --help
-personal-librarian quarantine history --help
-personal-librarian quarantine reconcile --help
-personal-librarian quarantine restore --help
-personal-librarian production bootstrap --help
-personal-librarian production health --help
-personal-librarian production recover --help
-personal-librarian catalogue backup create --help
-personal-librarian catalogue backup list --help
-personal-librarian catalogue backup verify --help
-personal-librarian catalogue backup report --help
+```text
+src/        application source
+tests/      deterministic synthetic-data tests
+docs/       architecture and milestone engineering records
+scripts/    guarded operational and project scripts
+packaging/  Windows build and release tooling
+config/     deterministic configuration area
 ```
 
-Run the standard targeted validation:
+## Data and privacy
+
+This repository contains source code, tests, configuration scaffolding, and documentation only. The following remain external and must never be committed:
+
+- personal photos, videos, documents, or other media;
+- catalogue databases, SQLite journals, and recovery candidates;
+- thumbnails, inventories, logs, caches, and staging data;
+- operational and disaster-recovery backups;
+- credentials, private filesystem details, and local editor state;
+- AI models; and
+- generated executables, archives, and release output.
+
+Core catalogue and desktop workflows are local-first. Some historical acquisition records discuss cloud-sync sources, but the current release does not silently upload personal media or add a hosted service.
+
+## Development
+
+Use Python 3.13 and install the project in editable mode as shown in [Quick start](#quick-start). Changes should remain focused, preserve the non-destructive boundaries, and include deterministic tests where behaviour changes.
+
+Before submitting a change:
 
 ```powershell
 python -m unittest discover -s tests -v
+git -c core.whitespace=cr-at-eol diff --check
 ```
 
-Catalogue health and backup commands require explicit external data and backup roots. Both
-operational and independent freshness thresholds are seven days. Live backups use the SQLite
-backup API and versioned manifests; no scheduler, generic action mode, or delete/overwrite
-path exists. Core catalogue and desktop workflows are local-first and do not upload personal
-media. Cloud acquisition, richer capture-metadata ingestion, and semantic/AI analysis are not
-part of the current release.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for contributor guidance and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+
+## Documentation
+
+- [Architecture and canonical project definition](PROJECT_TRUTH.md)
+- [Engineering-history index](docs/README.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+
+## License
+
+Personal Librarian is available under the [MIT License](LICENSE). Copyright © 2026 Konstantinos Aidinidis.

@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a focused improvement and describe its safety and privacy impact.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before prescribing an implementation. Do not include real private media, catalogue data, credentials, or personal filesystem paths.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or engineering problem should be solved?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed behaviour
+      description: What should Personal Librarian do, and what should remain unchanged?
+    validations:
+      required: true
+
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and privacy impact
+      description: Consider file mutation, owner approval, catalogue integrity, private data, backups, and auditability.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe workarounds or narrower approaches considered.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Submission checks
+      options:
+        - label: I have not included private media, catalogue/backup data, credentials, or personal paths.
+          required: true
