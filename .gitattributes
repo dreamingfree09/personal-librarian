@@ -1,0 +1,3 @@
+# Preserve Project Truth files byte-for-byte
+PROJECT_TRUTH.md -text
+PROJECT_TRUTH.v0.2.BASELINE.md -text

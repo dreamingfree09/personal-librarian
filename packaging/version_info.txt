@@ -1,0 +1,26 @@
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(0, 1, 0, 7),
+    prodvers=(0, 1, 0, 7),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        u'040904B0',
+        [StringStruct(u'CompanyName', u'Personal Librarian'),
+         StringStruct(u'FileDescription', u'Personal Librarian desktop review interface'),
+         StringStruct(u'FileVersion', u'0.1.0rc7'),
+         StringStruct(u'InternalName', u'PersonalLibrarian'),
+         StringStruct(u'OriginalFilename', u'PersonalLibrarian.exe'),
+         StringStruct(u'ProductName', u'Personal Librarian'),
+         StringStruct(u'ProductVersion', u'0.1.0rc7')])
+    ]),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+  ]
+)

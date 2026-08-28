@@ -1,0 +1,83 @@
+﻿# Personal Librarian - repository exclusions
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.secret
+*.key
+*.pem
+*.pfx
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+build/
+release/
+
+# Runtime and generated state
+runtime/
+cache/
+thumbnails/
+logs/
+tmp/
+temp/
+*.log
+*.tmp
+*.dmp
+
+# Databases and local indexes
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+indexes/
+embeddings/
+/catalogue/
+/data/
+
+# AI models and large generated assets
+models/
+*.gguf
+*.onnx
+
+# Personal data must never enter source control
+PersonalLibrary/
+library/
+media/
+imports/
+incoming/
+quarantine/
+backup/
+backups/
+staging/
+inventories/
+output/
+
+# OS and editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/*.log
+.qodo/
+.git-damaged-20260817/
+tools/rclone/
+
+# Generated release artefacts belong in ignored build/release directories or
+# in an explicitly approved future release, never in source control.
+*.exe
+*.zip
