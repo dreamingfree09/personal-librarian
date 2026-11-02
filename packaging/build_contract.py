@@ -67,7 +67,20 @@ def read_regular(path: Path):
             final.restype=wintypes.DWORD
             buffer=ctypes.create_unicode_buffer(32768)
             length=final(handle,buffer,len(buffer),0)
-            if not length or length >= len(buffer) or os.path.normcase(buffer.value.removeprefix('\\\\?\\')) != os.path.normcase(str(path)):
+            if not length or length >= len(buffer):
+                raise ValueError('Cannot establish the opened artifact path.')
+            # GetFinalPathName returns long names; Windows TEMP may use 8.3
+            # aliases. Expand names only (not junction/symlink resolution), then
+            # retain both physical containment and handle/file identity checks.
+            expand = kernel.GetLongPathNameW
+            expand.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+            expand.restype = wintypes.DWORD
+            expected = ctypes.create_unicode_buffer(32768)
+            expanded = expand(str(path), expected, len(expected))
+            if not expanded or expanded >= len(expected):
+                raise ValueError('Cannot establish the long artifact path.')
+            safe_path(Path(expected.value))
+            if os.path.normcase(buffer.value.removeprefix('\\\\?\\')) != os.path.normcase(expected.value):
                 raise ValueError('Opened artifact escaped its physical path.')
             descriptor=msvcrt.open_osfhandle(handle,os.O_RDONLY|os.O_BINARY)
             handle=None

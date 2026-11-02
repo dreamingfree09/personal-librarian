@@ -128,6 +128,20 @@ class ReleasePackagingTests(unittest.TestCase):
         with self.assertRaises(ValueError): C.distribution_files(self.dist,self.contract)
         self.assertEqual(outside.read_bytes(),b'runtime')
 
+    @unittest.skipUnless(os.name=='nt','Windows native short-name test')
+    def test_native_short_name_alias_is_not_an_escape(self):
+        import ctypes
+        from ctypes import wintypes
+        path=self.dist/'PersonalLibrarian.exe'
+        function=ctypes.WinDLL('kernel32',use_last_error=True).GetShortPathNameW
+        function.argtypes=[wintypes.LPCWSTR,wintypes.LPWSTR,wintypes.DWORD]
+        function.restype=wintypes.DWORD
+        buffer=ctypes.create_unicode_buffer(32768)
+        self.assertTrue(function(str(path),buffer,len(buffer)))
+        if buffer.value.casefold()==str(path).casefold():
+            self.skipTest('Native volume has no short-name alias; exact paths remain tested')
+        self.assertEqual(C.file_record(Path(buffer.value)),C.file_record(path))
+
     def test_unknown_reparse_attribute_rejected(self):
         original=Path.lstat
         def fake(path,*args,**kwargs):
