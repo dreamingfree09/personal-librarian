@@ -113,6 +113,9 @@ M13 does not:
 
 ## Known limitations
 
+For the later M19 narrow physical route and its interaction with explicitly
+selected global modes, see [the current operation-mode contract](CATALOGUE_MAINTENANCE.md).
+
 - Path assessment is deliberately lexical because M13 performs no filesystem operations. Future file-changing code must re-check real filesystem targets, links and junctions without weakening the retired-drive rule.
 - Configuration supports only project and data roots; source registries arrive in a later milestone.
 - Run state and logs are in memory/console only.

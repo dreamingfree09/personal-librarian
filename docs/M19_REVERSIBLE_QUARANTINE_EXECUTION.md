@@ -14,6 +14,11 @@ Exact duplicates are the only eligible evidence because M19 requires the source 
 
 ## Confirmation and eligibility gates
 
+Current CLI clarification: explicitly selecting `--mode read-only` or
+`--mode dry-run` prohibits physical execute/restore, including confirmed requests.
+The separately confirmed M19 route requires omission of `--mode`; it does not
+enable general ACTION mode. See [the current maintenance and mode contract](CATALOGUE_MAINTENANCE.md).
+
 `quarantine execute` requires `--confirm-quarantine`; the API requires `confirm_quarantine=True`. Restore independently requires `--confirm-restore`. Missing confirmation fails before an execution row or filesystem action is created.
 
 Execution additionally requires:

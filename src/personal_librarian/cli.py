@@ -114,6 +114,7 @@ from personal_librarian.safety import (
     PathIntent,
     PathSafetyPolicy,
     assess_operation,
+    physical_command_mode_error,
 )
 
 
@@ -122,8 +123,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode",
         choices=(OperationMode.READ_ONLY.value, OperationMode.DRY_RUN.value),
-        default=OperationMode.READ_ONLY.value,
-        help="Read-only and dry-run media-operation modes; action mode is unavailable.",
+        default=None,
+        help=("Explicit read-only/dry-run prohibits physical quarantine/restore even with "
+              "confirmation. Omit --mode for the separately confirmed narrow contract; "
+              "other media operations default to read-only. General action mode is unavailable."),
     )
     parser.add_argument("--config", help="Explicit path to a TOML configuration file.")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
@@ -637,7 +640,7 @@ def _add_collection_mutation_arguments(parser: argparse.ArgumentParser) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    mode = OperationMode(args.mode)
+    mode = OperationMode(args.mode or OperationMode.READ_ONLY.value)
     context = RunContext.create(mode)
     logger = configure_logging(context.run_id, verbose=args.verbose)
     catalogue_access = "none"
@@ -708,12 +711,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     logger.info(
         "command=%s media_mode=%s catalogue_access=%s",
         args.command,
-        mode.value,
+        ("narrow-quarantine-contract" if args.mode is None and args.command == "quarantine"
+         and args.quarantine_command in {"execute", "restore"} else mode.value),
         catalogue_access,
     )
 
     policy = PathSafetyPolicy()
     try:
+        if args.command == "quarantine" and args.quarantine_command in {"execute", "restore"}:
+            mode_error = physical_command_mode_error(args.mode)
+            if mode_error:
+                raise CatalogueError(mode_error)
         if args.command == "version":
             print(f"Personal Librarian {__version__}")
             return 0

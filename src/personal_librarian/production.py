@@ -10,6 +10,8 @@ import sqlite3
 import sys
 import time
 import uuid
+from contextlib import ExitStack
+from functools import wraps
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +22,9 @@ from personal_librarian.catalogue.database import connect_existing_catalogue, in
 from personal_librarian.catalogue.errors import ProductionError
 from personal_librarian.catalogue.importers import import_verified_evidence
 from personal_librarian.catalogue.migrations import CURRENT_SCHEMA_VERSION, read_schema_version
+from personal_librarian.catalogue.maintenance import (
+    catalogue_maintenance, exclusive_file, publish_no_replace, stream_sha256,
+)
 from personal_librarian.safety import PathIntent, PathSafetyPolicy, assess_write_destination
 
 
@@ -78,6 +83,25 @@ def application_data_layout(
     )
 
 
+def _exclusive_operation(function):
+    @wraps(function)
+    def run(**kwargs):
+        policy = kwargs.get('safety_policy') or PathSafetyPolicy()
+        layout = application_data_layout(kwargs['app_data_root'], safety_policy=policy)
+        if function.__name__ == 'bootstrap_production':
+            if layout.catalogue_path.exists():
+                raise ProductionError('A catalogue already exists; bootstrap refuses overwrite.')
+            _create_layout(layout, policy)
+        else:
+            if not kwargs.get('confirm_restore_catalogue') or not str(kwargs.get('actor', '')).strip():
+                raise ProductionError('Recovery requires an actor and --confirm-restore-catalogue.')
+            _require_layout_catalogue(layout)
+        with catalogue_maintenance(layout.catalogue_dir, function.__name__) as lease:
+            return function(**kwargs, _maintenance_state=lease)
+    return run
+
+
+@_exclusive_operation
 def bootstrap_production(
     *,
     app_data_root: str | os.PathLike[str],
@@ -91,6 +115,7 @@ def bootstrap_production(
     m11_summary_path: str | os.PathLike[str],
     baselines: Mapping[str, Mapping[str, Any]] | None = None,
     safety_policy: PathSafetyPolicy | None = None,
+    _maintenance_state: dict | None = None,
 ) -> ProductionReport:
     """Build a verified production catalogue in-root and atomically promote it."""
 
@@ -103,7 +128,8 @@ def bootstrap_production(
         raise ProductionError("A catalogue appeared at the production path; bootstrap refuses overwrite.")
 
     started = time.perf_counter()
-    staging = layout.catalogue_dir / f".bootstrap-{uuid.uuid4()}.sqlite3"
+    assert _maintenance_state is not None
+    staging = layout.catalogue_dir / f".bootstrap-{_maintenance_state['attempt_id']}.sqlite3"
     identity = str(uuid.uuid4())
     created_at = _utc_now()
     evidence = {
@@ -174,7 +200,19 @@ def bootstrap_production(
         if not final_check["accepted"]:
             raise ProductionError(f"Final bootstrap verification failed: {final_check['errors']}")
         _remove_empty_sqlite_sidecars(staging)
-        os.replace(staging, layout.catalogue_path)
+        with exclusive_file(staging) as staged_stream:
+            if any(Path(f'{layout.catalogue_path}{suffix}').exists() for suffix in ('-wal', '-shm')):
+                raise ProductionError('Bootstrap refuses pre-existing destination SQLite sidecars.')
+            publish_no_replace(staging, layout.catalogue_path)
+            if any(Path(f'{layout.catalogue_path}{suffix}').exists() for suffix in ('-wal', '-shm')):
+                # Preserve the foreign sidecars and our own staged catalogue.
+                assert _maintenance_state is not None
+                _maintenance_state['retain'] = True
+                if layout.catalogue_path.stat().st_ino != os.fstat(staged_stream.fileno()).st_ino:
+                    raise ProductionError('Bootstrap publication identity changed; offline review required.')
+                publish_no_replace(layout.catalogue_path, staging)
+                _maintenance_state['retain'] = False
+                raise ProductionError('Bootstrap destination SQLite sidecars appeared during publication.')
         return ProductionReport(
             {
                 "result": "PASS",
@@ -190,10 +228,8 @@ def bootstrap_production(
                 "duration_seconds": round(time.perf_counter() - started, 6),
             }
         )
-    except Exception:
-        _remove_file_if_present(staging)
-        _remove_file_if_present(Path(f"{staging}-wal"))
-        _remove_file_if_present(Path(f"{staging}-shm"))
+    except BaseException:
+        # Failed staging (including genuine WAL/SHM) is retained for diagnosis.
         raise
 
 
@@ -635,10 +671,12 @@ def independent_backup_readiness(
         )
 
 
+@_exclusive_operation
 def recover_production(
     *, app_data_root: str | os.PathLike[str], manifest_path: str | os.PathLike[str],
     actor: str, confirm_restore_catalogue: bool,
     safety_policy: PathSafetyPolicy | None = None,
+    _maintenance_state: dict | None = None,
 ) -> ProductionReport:
     if not confirm_restore_catalogue:
         raise ProductionError("Recovery requires --confirm-restore-catalogue.")
@@ -655,13 +693,14 @@ def recover_production(
         raise ProductionError(f"Recovery candidate rejected: {verification['errors']}")
 
     _create_validated_directory(layout.recovery_root, policy)
-    attempt_id = str(uuid.uuid4())
+    assert _maintenance_state is not None
+    attempt_id = str(_maintenance_state['attempt_id'])
     journal_path = layout.recovery_root / f"recovery-{attempt_id}.json"
     staged = layout.catalogue_dir / f".recovery-{attempt_id}.sqlite3"
     safeguarded = layout.catalogue_dir / f"pre-recovery-{attempt_id}.sqlite3"
     source_backup = Path(str(verification["database_path"]))
     journal: dict[str, Any] = {
-        "journal_version": 1,
+        "journal_version": 2,
         "recovery_attempt_id": attempt_id,
         "timestamp": _utc_now(),
         "actor": actor,
@@ -677,54 +716,112 @@ def recover_production(
     try:
         safety_backup = create_backup(app_data_root=layout.root, reason=f"pre-recovery:{attempt_id}", safety_policy=policy)
         journal["pre_recovery_backup"] = safety_backup.values["manifest_path"]
-        journal["old_production_sha256"] = _sha256_file(layout.catalogue_path)
-        source = _connect_immutable_snapshot(source_backup, policy)
-        target = sqlite3.connect(staged)
-        try:
-            source.backup(target)
-            target.commit()
-        finally:
-            target.close()
-            source.close()
+        # Copy the validated immutable snapshot byte-for-byte. SQLite backup() can
+        # change page metadata; exact bytes let us verify the promoted file while
+        # keeping its Windows exclusion handle open throughout verification.
+        with source_backup.open('rb') as source, staged.open('xb') as target:
+            while chunk := source.read(1024 * 1024):
+                target.write(chunk)
+            target.flush()
+            os.fsync(target.fileno())
+        if _sha256_file(staged) != verification['sha256']:
+            raise ProductionError('Recovery snapshot changed after backup verification.')
         staged_check = _verify_database(
-            staged,
-            expected_uuid=str(current["catalogue_uuid"]),
-            require_production=True,
-            policy=policy,
-            immutable=True,
+            staged, expected_uuid=str(current['catalogue_uuid']),
+            require_production=True, policy=policy, immutable=True,
         )
-        if not staged_check["accepted"]:
+        if not staged_check['accepted']:
             raise ProductionError(f"Staged recovery verification failed: {staged_check['errors']}")
-        os.replace(layout.catalogue_path, safeguarded)
-        try:
-            os.replace(staged, layout.catalogue_path)
-        except Exception:
-            os.replace(safeguarded, layout.catalogue_path)
-            raise
-        final = _verify_database(
-            layout.catalogue_path, expected_uuid=str(current["catalogue_uuid"]), require_production=True, policy=policy
-        )
-        if not final["accepted"]:
-            failed_replacement = layout.catalogue_dir / f"failed-recovery-{attempt_id}.sqlite3"
-            os.replace(layout.catalogue_path, failed_replacement)
-            os.replace(safeguarded, layout.catalogue_path)
-            raise ProductionError(f"Replacement verification failed: {final['errors']}")
-        journal.update(
-            {
-                "result": "succeeded",
-                "finished_at": _utc_now(),
-                "integrity_check": final["integrity_check"],
-                "foreign_key_violations": final["foreign_key_violations"],
-                "recovery_staging_seconds": round(time.perf_counter() - started, 6),
-            }
-        )
+        selected_logical = _snapshot_logical_digest(source_backup, policy)
+        if _snapshot_logical_digest(staged, policy) != selected_logical:
+            raise ProductionError('Staged recovery does not match the selected logical snapshot.')
+        journal['selected_logical_sha256'] = selected_logical
+        with ExitStack() as locks:
+            originals = []
+            for suffix in ('', '-wal', '-shm'):
+                old = Path(f'{layout.catalogue_path}{suffix}')
+                if old.exists():
+                    stream = locks.enter_context(exclusive_file(old))
+                    originals.append((old, Path(f'{safeguarded}{suffix}'), stream))
+            replacement = locks.enter_context(exclusive_file(staged))
+            if stream_sha256(replacement) != verification['sha256']:
+                raise ProductionError('Staged snapshot changed before exclusive promotion.')
+            journal['original_files'] = [
+                {'original': str(old), 'preserved': str(saved), 'sha256': stream_sha256(stream)}
+                for old, saved, stream in originals
+            ]
+            journal['old_production_sha256'] = journal['original_files'][0]['sha256']
+            moved = []
+            promoted = False
+            try:
+                for old, saved, stream in originals:
+                    journal['phase'] = f'preserving:{old.name}'
+                    _replace_json(journal_path, journal)
+                    publish_no_replace(old, saved)
+                    moved.append((old, saved, stream))
+                journal['phase'] = 'promoting-selected-snapshot'
+                _replace_json(journal_path, journal)
+                publish_no_replace(staged, layout.catalogue_path)
+                promoted = True
+                _verify_promoted_snapshot(layout.catalogue_path, replacement, verification['sha256'])
+                # Exact final bytes, no live sidecars, and the staged logical
+                # comparison establish equality to the selected snapshot rather
+                # than merely an internally consistent but incorrect database.
+                journal.update({
+                    'result': 'succeeded', 'phase': 'verified', 'finished_at': _utc_now(),
+                    'integrity_check': staged_check['integrity_check'],
+                    'foreign_key_violations': staged_check['foreign_key_violations'],
+                    'final_snapshot_sha256': verification['sha256'],
+                    'final_logical_sha256': selected_logical,
+                    'recovery_staging_seconds': round(time.perf_counter() - started, 6),
+                })
+                _replace_json(journal_path, journal)
+            except BaseException:
+                try:
+                    if promoted:
+                        if layout.catalogue_path.stat().st_ino != os.fstat(replacement.fileno()).st_ino:
+                            raise ProductionError('Replacement identity changed; automatic rollback refused.')
+                        publish_no_replace(layout.catalogue_path, layout.catalogue_dir / f'failed-recovery-{attempt_id}.sqlite3')
+                    # Restore sidecars before the main file; never overwrite an
+                    # intervening file. Original handles still exclude SQLite.
+                    for old, saved, stream in reversed(moved):
+                        publish_no_replace(saved, old)
+                        if stream_sha256(stream) != next(item['sha256'] for item in journal['original_files'] if item['original'] == str(old)):
+                            raise ProductionError('Rollback evidence hash mismatch.')
+                    journal['rollback'] = 'restored-original-file-set'
+                except BaseException as rollback_error:
+                    assert _maintenance_state is not None
+                    _maintenance_state['retain'] = True
+                    journal['rollback'] = 'offline-recovery-required'
+                    journal['rollback_error'] = str(rollback_error)
+                raise
+        return ProductionReport({**journal, 'journal_path': str(journal_path)})
+    except BaseException as exc:
+        journal.update({'result': 'failed', 'finished_at': _utc_now(), 'error': str(exc)})
         _replace_json(journal_path, journal)
-        return ProductionReport({**journal, "journal_path": str(journal_path)})
-    except Exception as exc:
-        journal.update({"result": "failed", "finished_at": _utc_now(), "error": str(exc)})
-        _replace_json(journal_path, journal)
-        _remove_file_if_present(staged)
+        # Staging, failed replacement and old DB/WAL/SHM evidence are retained.
         raise
+
+
+def _snapshot_logical_digest(path: Path, policy: PathSafetyPolicy) -> str:
+    connection = _connect_immutable_snapshot(path, policy)
+    try:
+        digest = hashlib.sha256()
+        for statement in connection.iterdump():
+            digest.update(statement.encode('utf-8'))
+            digest.update(b'\n')
+        return digest.hexdigest()
+    finally:
+        connection.close()
+
+
+def _verify_promoted_snapshot(path: Path, stream, expected_sha256: str) -> None:
+    if path.stat().st_ino != os.fstat(stream.fileno()).st_ino:
+        raise ProductionError('Final snapshot file identity mismatch.')
+    if any(Path(f'{path}{suffix}').exists() for suffix in ('-wal', '-shm')):
+        raise ProductionError('Unexpected live SQLite sidecar during final verification.')
+    if stream_sha256(stream) != expected_sha256:
+        raise ProductionError('Final catalogue differs from the selected snapshot.')
 
 
 def _verify_database(
@@ -942,6 +1039,8 @@ def _write_json_exclusive(path: Path, value: Mapping[str, Any]) -> None:
         with path.open("x", encoding="utf-8", newline="\n") as handle:
             json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
     except OSError as exc:
         raise ProductionError(f"Cannot create journal/manifest '{path}': {exc}") from exc
 

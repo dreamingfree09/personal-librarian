@@ -27,6 +27,17 @@ class OperationMode(StrEnum):
     ACTION = "action"
 
 
+def physical_command_mode_error(explicit_mode: str | None) -> str | None:
+    """M19 confirmation is a narrow contract, never an override of M13 modes."""
+    if explicit_mode is not None:
+        return (
+            f"Explicit {explicit_mode} mode prohibits physical quarantine/restore. "
+            "Omit --mode only when intentionally using the separately confirmed "
+            "quarantine/restore contract. General action mode remains unavailable."
+        )
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class SafetyResult:
     """An explainable path-safety decision."""
