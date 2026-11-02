@@ -40,6 +40,8 @@ def child(mode: str) -> None:
     import unittest
 
     faulthandler.enable()
+    # Match `python -m unittest`: fixture helpers also import `tests.*`.
+    sys.path.insert(0, str(Path.cwd()))
     sys.path.insert(0, str(Path("tests").resolve()))
     atexit.register(observe, "python-atexit")
     observe("before-unittest")
