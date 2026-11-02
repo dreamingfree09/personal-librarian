@@ -229,6 +229,29 @@ class ReleasePackagingTests(unittest.TestCase):
         with patch.object(C.importlib.metadata,'distributions',return_value=[]):
             with self.assertRaises(ValueError): C.verify_resource_origin(name,source,workpath=None)
 
+    def test_build_reuses_record_inventory_but_rechecks_each_resource(self):
+        import base64, hashlib
+        from types import SimpleNamespace
+        names = ['_internal/PySide6/translations/qt_en.qm', '_internal/PySide6/translations/qtbase_en.qm']
+        sources = {}; records = []
+        for name in names:
+            source=self.inputs/Path(name).name;source.write_bytes(name.encode())
+            target=self.dist/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(source.read_bytes())
+            sources[name]=source
+            class Record:
+                def __init__(self, name, data):
+                    self.name=name.split('/',1)[1]
+                    self.hash=SimpleNamespace(mode='sha256',value=base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip('='))
+                def __str__(self): return self.name
+            records.append(Record(name,source.read_bytes()))
+        distribution=SimpleNamespace(files=records,locate_file=lambda item:sources['_internal/'+str(item)])
+        with patch.object(C.importlib.metadata,'distributions',return_value=[distribution]) as inventory:
+            C.contract_from_inputs(self.dist,{**self.expected,**sources},{'validation':'NOT_PERFORMED'})
+            self.assertEqual(inventory.call_count,1)
+        sources[names[1]].write_bytes(b'changed')
+        with patch.object(C.importlib.metadata,'distributions',return_value=[distribution]):
+            with self.assertRaises(ValueError): C.contract_from_inputs(self.dist,{**self.expected,**sources},{'validation':'NOT_PERFORMED'})
+
     def prepare_release(self):
         repository=self.root/'repo';repository.mkdir();(repository/'tmp').mkdir()
         distribution=repository/'tmp'/'dist'

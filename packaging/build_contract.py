@@ -42,7 +42,7 @@ def require_resource_name(name: str) -> str:
     raise ValueError('Resource lacks an explicit reviewed runtime approval.')
 
 
-def verify_resource_origin(name: str, source: Path, *, workpath: Path | None) -> None:
+def verify_resource_origin(name: str, source: Path, *, workpath: Path | None, records=None) -> None:
     """Bind narrowly approved data to generated stdlib or installed wheel RECORD.
 
     This is a trusted-build check, not authentication of an attacker-supplied
@@ -67,8 +67,10 @@ def verify_resource_origin(name: str, source: Path, *, workpath: Path | None) ->
     expected = '/'.join(name.split('/')[1:])
     # Wheel RECORD binds both destination and source, not just a file extension
     # or a convenient runtime directory. The selected environment is trusted.
-    for distribution in importlib.metadata.distributions():
-        for item in distribution.files or ():
+    if records is None:
+        records = [(dist, tuple(dist.files or ())) for dist in importlib.metadata.distributions()]
+    for distribution, items in records:
+        for item in items:
             if str(item).replace('\\', '/').casefold() != expected.casefold():
                 continue
             if safe_path(Path(distribution.locate_file(item))) != source:
@@ -220,8 +222,14 @@ def distribution_files(distribution: Path, contract: dict) -> list[Path]:
 
 def contract_from_inputs(distribution: Path, inputs: dict[str,Path], provenance: dict, *, workpath: Path | None = None) -> dict:
     """Called only with reviewed build graph inputs, never an rglob of dist."""
+    records = None
     for name, source in inputs.items():
-        verify_resource_origin(name, source, workpath=workpath)
+        rule = require_resource_name(name)
+        if rule in {'qt-translation', 'dependency-license', 'dependency-metadata'} and records is None:
+            # Snapshot RECORD metadata once per build; every resource still gets
+            # its own source-path and current-byte verification. No global cache.
+            records = [(dist, tuple(dist.files or ())) for dist in importlib.metadata.distributions()]
+        verify_resource_origin(name, source, workpath=workpath, records=records)
     files={relative_name(name):file_record(source) for name,source in inputs.items()}
     material={'schema':SCHEMA,'provenance':provenance,'files':files}
     contract={**material,'fingerprint':seal(material)}
