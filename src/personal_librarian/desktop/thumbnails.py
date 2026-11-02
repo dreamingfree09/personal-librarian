@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -13,8 +14,9 @@ from PySide6.QtGui import QImage
 
 from personal_librarian.safety import PathIntent, PathSafetyPolicy
 
-THUMBNAIL_VERSION = "m25-v2"
-SUPPORTED_IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp"})
+THUMBNAIL_VERSION = "preview-format-boundary-v3"
+IMAGE_FORMATS = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".gif": "GIF", ".webp": "WEBP"}
+SUPPORTED_IMAGE_SUFFIXES = frozenset(IMAGE_FORMATS)
 MAX_SOURCE_PIXELS = 50_000_000
 
 
@@ -97,8 +99,15 @@ class ThumbnailService:
             return ThumbnailResult(key, cache_path, None)
         temporary_cache = cache_path.with_name(f".{cache_path.name}.{uuid4().hex}.tmp")
         try:
-            with source.open("rb") as stream:
-                with Image.open(stream) as opened:
+            # Restrict plugin selection itself, before parsing metadata or pixels.
+            # Passing every installed Pillow decoder here would make a trusted
+            # extension sufficient to enter an excluded native decoder.
+            with source.open("rb") as stream, warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                expected_format = IMAGE_FORMATS[source.suffix.casefold()]
+                with Image.open(stream, formats=[expected_format]) as opened:
+                    if opened.format != expected_format:
+                        raise ValueError("Image content does not match its preview file type.")
                     if opened.width * opened.height > MAX_SOURCE_PIXELS:
                         raise ValueError("Image dimensions exceed the preview safety limit.")
                     opened.seek(0)
@@ -108,7 +117,8 @@ class ThumbnailService:
                     image.save(temporary_cache, format="PNG", optimize=True)
                     temporary_cache.replace(cache_path)
             return ThumbnailResult(key, cache_path, None)
-        except (OSError, ValueError, UnidentifiedImageError) as exc:
+        except (OSError, ValueError, SyntaxError, EOFError, Image.DecompressionBombError,
+                Image.DecompressionBombWarning, UnidentifiedImageError) as exc:
             return ThumbnailResult(key, None, f"Preview unavailable: {exc}")
         finally:
             temporary_cache.unlink(missing_ok=True)
