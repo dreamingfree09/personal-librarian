@@ -78,7 +78,7 @@ def build_provenance(repository: Path, *, allow_dirty: bool = False) -> dict:
     return {**source_state(repository,allow_dirty=allow_dirty),
             'build_timestamp_utc':datetime.now(UTC).isoformat(timespec='seconds'),
             'environment':{'python':sys.version,'os':platform.platform(),'architecture':platform.machine(),
-                           'dependencies':sorted((d.metadata['Name'],d.version) for d in importlib.metadata.distributions())},
+                           'dependencies':sorted([d.metadata['Name'],d.version] for d in importlib.metadata.distributions())},
             'validation':'NOT_PERFORMED'}
 
 

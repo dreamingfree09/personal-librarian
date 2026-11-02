@@ -124,7 +124,7 @@ class ReleasePackagingTests(unittest.TestCase):
             # Non-elevated Windows without Developer Mode cannot create symlinks;
             # junction and attribute-based rejection are separately mandatory.
             if getattr(error,'winerror',None)!=1314: raise
-            return
+            self.skipTest('Windows symlink creation privilege unavailable; junction and hardlink checks ran')
         with self.assertRaises(ValueError): C.distribution_files(self.dist,self.contract)
         self.assertEqual(outside.read_bytes(),b'runtime')
 
@@ -154,6 +154,15 @@ class ReleasePackagingTests(unittest.TestCase):
         with zipfile.ZipFile(self.archive,'a') as archive: archive.writestr('PersonalLibrarian/extra.txt',b'x')
         with self.assertRaises(ValueError): BUILD_RELEASE.verify_archive(self.archive,self.contract)
 
+    def test_zip_exact_names_with_wrong_bytes_rejected(self):
+        with zipfile.ZipFile(self.archive,'w') as archive:
+            for name,source in sorted(self.expected.items(),key=lambda item:item[0].casefold()):
+                data=source.read_bytes()
+                if name=='PersonalLibrarian.exe': data=b'x'*len(data)
+                archive.writestr('PersonalLibrarian/'+name,data)
+        with self.assertRaisesRegex(ValueError,'content mismatch'):
+            BUILD_RELEASE.verify_archive(self.archive,self.contract)
+
     def git(self,*args):
         return subprocess.run(['git',*args],cwd=self.root,check=True,capture_output=True,text=True).stdout.strip()
 
@@ -163,6 +172,7 @@ class ReleasePackagingTests(unittest.TestCase):
         (self.root/'code.py').write_text('print(1)\n')
         self.git('add','.gitignore','code.py');self.git('commit','-qm','synthetic source')
         clean=BUILD_RELEASE.build_provenance(self.root)
+        self.assertEqual(json.loads(json.dumps(clean)),clean)
         self.assertFalse(clean['working_tree_dirty']);self.assertEqual(clean['validation'],'NOT_PERFORMED')
         self.assertEqual(clean['source_tree'],self.git('rev-parse','HEAD^{tree}'))
         BUILD_RELEASE.verify_provenance(self.root,clean)
