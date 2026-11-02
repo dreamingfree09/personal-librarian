@@ -14,6 +14,7 @@ from personal_librarian.catalogue.migrations import (
     read_schema_version,
 )
 from personal_librarian.catalogue.models import CatalogueStatus
+from personal_librarian.catalogue.maintenance import require_catalogue_available
 from personal_librarian.safety import PathIntent, PathSafetyPolicy
 
 
@@ -61,6 +62,7 @@ def connect_existing_catalogue(
     policy = safety_policy or PathSafetyPolicy()
     intent = PathIntent.READ if read_only else PathIntent.WRITE
     path = _validate_database_path(database_path, intent, policy)
+    require_catalogue_available(path)
     if not path.is_file():
         raise CatalogueError(f"Catalogue database does not exist: {path}")
     connection = _connect(path, read_only=read_only)
@@ -98,6 +100,7 @@ def _validate_database_path(
 
 
 def _connect(path: Path, *, read_only: bool) -> sqlite3.Connection:
+    require_catalogue_available(path)
     try:
         if read_only:
             connection = sqlite3.connect(
@@ -111,6 +114,11 @@ def _connect(path: Path, *, read_only: bool) -> sqlite3.Connection:
         access = "read-only" if read_only else "read-write"
         raise CatalogueError(f"Cannot open catalogue '{path}' in {access} mode: {exc}") from exc
 
+    try:
+        require_catalogue_available(path)
+    except BaseException:
+        connection.close()
+        raise
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 5000")

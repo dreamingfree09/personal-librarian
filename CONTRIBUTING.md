@@ -30,6 +30,13 @@ git -c core.whitespace=cr-at-eol diff --check
 
 The tests use temporary directories and synthetic fixtures. New tests must do the same: never depend on a production catalogue, private media, real backup roots, or a contributor's machine layout.
 
+For the controlled Windows CI environment, install `requirements-ci.txt`
+before installing the project with `--no-deps --no-build-isolation`.
+PySide6 is currently qualified at 6.11.2 because 6.12.0 reproduces native
+shutdown crashes after successful test assertions. See
+[the process-finalisation diagnostic](docs/CI_FINALISATION_DIAGNOSTIC.md)
+for evidence, limitations and the command that records actual process exits.
+
 ## Pull requests
 
 - Keep each pull request focused and explain the problem it solves.

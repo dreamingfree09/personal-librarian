@@ -94,7 +94,7 @@ class LayoutAndBootstrapTests(ProductionTestCase):
         with self.assertRaisesRegex(ProductionError, "refuses overwrite"):
             self.bootstrap()
 
-    def test_mismatch_does_not_leave_production_or_staging_database(self) -> None:
+    def test_mismatch_preserves_staging_without_publishing_production(self) -> None:
         baselines = {key: dict(value) for key, value in self.evidence.baselines.items()}
         baselines["m9"]["rows"] = 999
         kwargs = {key: value for key, value in self.evidence.kwargs(self.root / "unused").items()
@@ -103,7 +103,7 @@ class LayoutAndBootstrapTests(ProductionTestCase):
             bootstrap_production(app_data_root=self.app_root, baselines=baselines, **kwargs)
         layout = application_data_layout(self.app_root)
         self.assertFalse(layout.catalogue_path.exists())
-        self.assertEqual(list(layout.catalogue_dir.glob(".bootstrap-*")), [])
+        self.assertEqual(len(list(layout.catalogue_dir.glob(".bootstrap-*.sqlite3"))), 1)
 
 
 class BackupHealthRecoveryTests(ProductionTestCase):
@@ -235,7 +235,7 @@ class BackupHealthRecoveryTests(ProductionTestCase):
         backup = create_backup(app_data_root=self.app_root).values
         layout = application_data_layout(self.app_root)
         original_hash = __import__("hashlib").sha256(layout.catalogue_path.read_bytes()).hexdigest()
-        real_replace = __import__("os").replace
+        real_replace = __import__("os").rename
 
         def interrupt_staged_promotion(source, destination):
             source_path = Path(source)
@@ -244,7 +244,7 @@ class BackupHealthRecoveryTests(ProductionTestCase):
                 raise OSError("synthetic interrupted promotion")
             return real_replace(source, destination)
 
-        with mock.patch("personal_librarian.production.os.replace", side_effect=interrupt_staged_promotion):
+        with mock.patch("personal_librarian.production.os.rename", side_effect=interrupt_staged_promotion):
             with self.assertRaisesRegex(OSError, "interrupted promotion"):
                 recover_production(
                     app_data_root=self.app_root, manifest_path=backup["manifest_path"],

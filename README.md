@@ -207,6 +207,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for contributor guidance and [SECURITY.m
 ## Documentation
 
 - [Architecture and canonical project definition](PROJECT_TRUTH.md)
+- [Catalogue maintenance and physical command modes](docs/CATALOGUE_MAINTENANCE.md)
 - [Engineering-history index](docs/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
