@@ -5,7 +5,12 @@ production adoption, a general ACTION mode, or changes to existing owner data.
 
 ## Bootstrap and recovery
 
-Bootstrap and recovery are exclusive Windows maintenance operations. Close the
+Bootstrap and recovery are exclusive Windows maintenance operations supported
+only on fixed local NTFS volumes with Python 3.13. UNC/network paths, mapped
+network drives, non-NTFS, removable/unknown drives and reparse-path traversal are
+explicitly rejected for maintenance. Recovery's selected backup files must also
+be local NTFS inputs. This restriction does not redefine other backup workflows.
+Close the
 desktop application and other catalogue connections first. A create-only
 maintenance lease coordinates Librarian processes. Windows file handles exclude
 other SQLite readers/writers during replacement; a competing connection causes
@@ -30,12 +35,30 @@ without overwriting intervening files. A failed replacement is retained. The
 durable recovery journal records intended transitions, original file hashes,
 preserved locations, selected snapshot identity, outcome and rollback status.
 
+Before the first preservation or publication rename, lease retention is armed.
+It stays armed even if Windows completes a rename and an interruption prevents
+the caller from receiving its return value. Rollback reconciles actual original
+and preserved locations against the held handles and recorded device/file-index
+identities, then verifies every recorded hash and the absence of unexpected
+sidecars. It does not trust a list of completed calls. A same-content file with
+a different physical identity is not adopted. Only a durably journaled verified
+publication or fully verified restoration permits lease removal.
+
+Windows identity is the pair `(st_dev, st_ino)` obtained from Python's path stat
+and held-descriptor fstat interfaces; a zero file index or a non-regular/reparse
+file is rejected. Native NTFS tests check that this pair stays equal across a
+rename and differs for two separate files containing identical bytes. These
+results are not extrapolated to UNC, SMB, ReFS, FAT or other filesystems.
+
 ## Interrupted maintenance
 
 An abrupt process termination leaves the maintenance lease in place. Normal
 Librarian catalogue access refuses an active or abandoned lease. A failed
 rollback also retains the lease and reports `offline-recovery-required`.
 There is deliberately no timeout-based lease stealing or automatic cleanup.
+Bootstrap also retains a publication journal with the staged snapshot identity,
+hash and both names. An interruption immediately after bootstrap publication
+keeps the lease until offline review; it is not treated as an accepted bootstrap.
 
 Do not remove an unexplained lease, delete sidecars, or open preserved evidence
 in place. Keep the application offline. Review the matching attempt ID and
