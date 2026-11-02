@@ -1,86 +1,31 @@
-"""Create the local, versioned Windows release candidate."""
-
+"""Create a portable candidate from an explicit controlled build contract."""
 from __future__ import annotations
-
 import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 import platform
+from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 import tomllib
+from uuid import uuid4
 import zipfile
 from datetime import UTC, datetime
-from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build_contract import (contract_from_inputs, distribution_files, file_record,
+                            read_regular, safe_path, seal, validate_contract)
 
 RELEASE_VERSION = "0.1.0rc7"
 ARCHIVE_NAME = f"PersonalLibrarian-{RELEASE_VERSION}-win64.zip"
-SCHEMA_VERSION = 10
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
-_FORBIDDEN_PARTS = {
-    ".git",
-    "__pycache__",
-    "build",
-    "release",
-    "tests",
-}
-_FORBIDDEN_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
 
 
 def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
-
-
-def distribution_files(distribution: Path) -> list[Path]:
-    """Return a deterministic, safety-checked list of distribution files."""
-
-    if not distribution.is_dir():
-        raise FileNotFoundError(f"Distribution is missing: {distribution}")
-    files = sorted(
-        (path for path in distribution.rglob("*") if path.is_file()),
-        key=lambda path: path.relative_to(distribution).as_posix().casefold(),
-    )
-    if not files:
-        raise ValueError("Distribution contains no files.")
-    for path in files:
-        relative = path.relative_to(distribution)
-        lowered_parts = {part.casefold() for part in relative.parts}
-        if lowered_parts & _FORBIDDEN_PARTS:
-            raise ValueError(f"Forbidden distribution path: {relative}")
-        if path.suffix.casefold() in _FORBIDDEN_SUFFIXES:
-            raise ValueError(f"Catalogue-like file found in distribution: {relative}")
-        if path.name.casefold().startswith(".env") or "smoke-report" in path.name.casefold():
-            raise ValueError(f"Private or temporary file found in distribution: {relative}")
-    return files
-
-
-def create_archive(distribution: Path, files: list[Path], archive: Path) -> None:
-    """Create a ZIP with stable selection, order, paths, and entry timestamps."""
-
-    if archive.exists():
-        raise FileExistsError(f"Refusing to overwrite release archive: {archive}")
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with zipfile.ZipFile(
-            archive, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9
-        ) as destination:
-            for source in files:
-                relative = source.relative_to(distribution).as_posix()
-                info = zipfile.ZipInfo(f"PersonalLibrarian/{relative}", _ZIP_TIMESTAMP)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.external_attr = (0o755 if source.suffix.casefold() == ".exe" else 0o644) << 16
-                with source.open("rb") as input_stream, destination.open(info, "w") as output_stream:
-                    shutil.copyfileobj(input_stream, output_stream, length=1024 * 1024)
-    except Exception:
-        archive.unlink(missing_ok=True)
-        raise
+    return file_record(path)['sha256']
 
 
 def verify_version_metadata(repository: Path) -> None:
@@ -116,121 +61,137 @@ def git_output(repository: Path, *arguments: str) -> str:
     ).stdout.strip()
 
 
-def write_release_files(
-    repository: Path,
-    distribution: Path,
-    output: Path,
-    base_source_commit: str,
-) -> dict[str, object]:
-    repository = repository.resolve()
-    distribution = distribution.resolve()
-    output = output.resolve()
-    expected_distribution = (repository / "dist/PersonalLibrarian").resolve()
-    expected_output = (repository / "release").resolve()
-    if distribution != expected_distribution:
-        raise ValueError(f"Distribution must be {expected_distribution}")
-    if output != expected_output:
-        raise ValueError(f"Release output must be {expected_output}")
+def source_state(repository: Path, *, allow_dirty: bool = False) -> dict:
+    status=git_output(repository,'status','--porcelain=v1','--untracked-files=all')
+    if status and not allow_dirty:
+        raise ValueError('Release build requires a clean source checkout.')
+    # Bind dirty test builds to actual tracked bytes, not merely the HEAD label.
+    names=git_output(repository,'ls-files','-z').split('\0')
+    tracked={name:file_record(repository/name) for name in names if name}
+    return {'source_commit':git_output(repository,'rev-parse','HEAD'),
+            'source_tree':git_output(repository,'rev-parse','HEAD^{tree}'),
+            'working_tree_dirty':bool(status),'tracked_content_fingerprint':seal(tracked),
+            'status_fingerprint':hashlib.sha256(status.encode()).hexdigest()}
+
+
+def build_provenance(repository: Path, *, allow_dirty: bool = False) -> dict:
+    return {**source_state(repository,allow_dirty=allow_dirty),
+            'build_timestamp_utc':datetime.now(UTC).isoformat(timespec='seconds'),
+            'environment':{'python':sys.version,'os':platform.platform(),'architecture':platform.machine(),
+                           'dependencies':sorted((d.metadata['Name'],d.version) for d in importlib.metadata.distributions())},
+            'validation':'NOT_PERFORMED'}
+
+
+def verify_provenance(repository: Path, provenance: dict, *, allow_dirty: bool = False):
+    if provenance.get('validation')!='NOT_PERFORMED':
+        raise ValueError('Build provenance must not inherit validation claims.')
+    current=source_state(repository,allow_dirty=allow_dirty)
+    if any(provenance.get(key)!=value for key,value in current.items()):
+        raise ValueError('Build source/provenance drift.')
+
+
+def verify_archive(archive: Path, contract: dict) -> None:
+    expected=validate_contract(contract)
+    with read_regular(archive) as stream, zipfile.ZipFile(stream) as candidate:
+        names=['PersonalLibrarian/'+name for name in sorted(expected,key=str.casefold)]
+        if candidate.namelist()!=names: raise ValueError('Archive membership/order mismatch.')
+        for info in candidate.infolist():
+            record=expected[info.filename.removeprefix('PersonalLibrarian/')]
+            if info.file_size != record['size']: raise ValueError('Archive entry size mismatch.')
+            digest=hashlib.sha256(); size=0
+            with candidate.open(info) as source:
+                while chunk:=source.read(1024*1024): digest.update(chunk);size+=len(chunk)
+            if {'size':size,'sha256':digest.hexdigest()}!=record:
+                raise ValueError('Archive content mismatch.')
+
+
+def create_archive(distribution: Path, contract: dict, archive: Path) -> None:
+    distribution=safe_path(distribution); archive=safe_path(archive)
+    files=distribution_files(distribution,contract)
+    if archive.exists(): raise FileExistsError('Refusing to overwrite an archive.')
+    archive.parent.mkdir(parents=True,exist_ok=True)
+    safe_path(archive.parent)
+    temporary=archive.with_name('.'+archive.name+'.'+uuid4().hex+'.tmp')
+    created=False
+    try:
+        with temporary.open('xb') as output:
+            created=True
+            with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as destination:
+                for source in files:
+                    relative=source.relative_to(distribution).as_posix()
+                    info=zipfile.ZipInfo('PersonalLibrarian/'+relative,_ZIP_TIMESTAMP)
+                    info.compress_type=zipfile.ZIP_DEFLATED
+                    info.external_attr=(0o755 if source.suffix.casefold()=='.exe' else 0o644)<<16
+                    digest=hashlib.sha256();size=0
+                    with read_regular(source) as incoming, destination.open(info,'w') as outgoing:
+                        while chunk:=incoming.read(1024*1024):
+                            digest.update(chunk);size+=len(chunk);outgoing.write(chunk)
+                    if {'size':size,'sha256':digest.hexdigest()}!=contract['files'][relative]:
+                        raise ValueError('Artifact changed during archive creation.')
+        distribution_files(distribution,contract)
+        verify_archive(temporary,contract)
+        safe_path(archive.parent)
+        if os.name=='nt': os.rename(temporary,archive)  # atomic, no replacement on Windows
+        else:
+            os.link(temporary,archive)
+            temporary.unlink()
+        created=False
+    finally:
+        if created: temporary.unlink(missing_ok=True)
+
+
+def write_release_files(repository: Path, distribution: Path, output: Path, contract: dict, *, allow_dirty: bool=False) -> dict:
+    repository=safe_path(repository);distribution=safe_path(distribution);output=safe_path(output)
+    if not distribution.is_relative_to(repository/'tmp') or output!=repository/'release':
+        raise ValueError('Only controlled temporary builds and the repository release output are supported.')
+    validate_contract(contract)
     verify_version_metadata(repository)
-
-    executable = distribution / "PersonalLibrarian.exe"
-    if not executable.is_file():
-        raise FileNotFoundError(f"Packaged executable is missing: {executable}")
-    files = distribution_files(distribution)
-    archive = output / ARCHIVE_NAME
-    manifest_path = output / f"PersonalLibrarian-{RELEASE_VERSION}-win64.manifest.json"
-    checksums_path = output / f"PersonalLibrarian-{RELEASE_VERSION}-win64.sha256"
-    file_manifest_path = output / f"PersonalLibrarian-{RELEASE_VERSION}-win64.files.sha256"
-    for target in (manifest_path, checksums_path, file_manifest_path):
-        if target.exists():
-            raise FileExistsError(f"Refusing to overwrite release output: {target}")
-
-    create_archive(distribution, files, archive)
-    archive_hash = sha256_file(archive)
-    executable_hash = sha256_file(executable)
-    source_commit = git_output(repository, "rev-parse", "HEAD")
-    working_tree_status = git_output(repository, "status", "--porcelain=v1")
-    manifest: dict[str, object] = {
-        "release_version": RELEASE_VERSION,
-        "release_status": "local unsigned release candidate",
-        "build_timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
-        "base_source_commit": base_source_commit,
-        "source_commit": source_commit,
-        "working_tree_dirty": bool(working_tree_status),
-        "working_tree_statement": (
-            "Built from the uncommitted release-validation working tree; "
-            "this is not a clean tagged release."
-        ),
-        "platform": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "machine": platform.machine(),
-            "validated_target": "Windows 11 Pro 64-bit",
-        },
-        "executable_name": executable.name,
-        "distribution_name": distribution.name,
-        "archive_name": archive.name,
-        "archive_size_bytes": archive.stat().st_size,
-        "archive_sha256": archive_hash,
-        "executable_size_bytes": executable.stat().st_size,
-        "executable_sha256": executable_hash,
-        "packaged_file_count": len(files),
-        "application_version": RELEASE_VERSION,
-        "runtime": f"Python {platform.python_version()} bundled by PyInstaller",
-        "schema_compatibility": {
-            "expected_schema_version": SCHEMA_VERSION,
-            "migration_introduced": False,
-        },
-        "production_data_compatibility": (
-            "Schema-10-compatible successor to RC6. No production catalogue or media is "
-            "bundled or migrated by this release; desktop launch never auto-migrates."
-        ),
-        "signed": False,
-        "installer": False,
-        "build_tooling": {
-            "pyinstaller": importlib.metadata.version("PyInstaller"),
-            "python": platform.python_version(),
-            "archive_writer": "Python zipfile (DEFLATE level 9; normalized entry timestamps)",
-        },
-    }
-    manifest_path.write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    checksums_path.write_text(
-        f"{archive_hash}  {archive.name}\n"
-        f"{executable_hash}  PersonalLibrarian/PersonalLibrarian.exe\n",
-        encoding="ascii",
-    )
-    file_manifest_path.write_text(
-        "".join(
-            f"{sha256_file(path)}  PersonalLibrarian/{path.relative_to(distribution).as_posix()}\n"
-            for path in files
-        ),
-        encoding="utf-8",
-    )
-    return {
-        "archive": str(archive),
-        "manifest": str(manifest_path),
-        "checksums": str(checksums_path),
-        "file_manifest": str(file_manifest_path),
-        **manifest,
-    }
+    verify_provenance(repository,contract['provenance'],allow_dirty=allow_dirty)
+    output.mkdir(exist_ok=True)
+    archive=output/ARCHIVE_NAME
+    manifest_path=output/(ARCHIVE_NAME+'.manifest.json')
+    checksums=output/(ARCHIVE_NAME+'.sha256')
+    for target in (archive,manifest_path,checksums):
+        if target.exists(): raise FileExistsError('Refusing to overwrite release output.')
+    create_archive(distribution,contract,archive)
+    verify_provenance(repository,contract['provenance'],allow_dirty=allow_dirty)
+    receipt={'release_version':RELEASE_VERSION,'release_status':'unsigned local candidate; package acceptance not performed',
+             'signed':False,'installer':False,'provenance':contract['provenance'],
+             'build_contract_fingerprint':contract['fingerprint'],'files':contract['files'],
+             'archive':{'name':archive.name,**file_record(archive)},
+             'validation':{'status':'NOT_PERFORMED','evidence':[]}}
+    with manifest_path.open('x',encoding='utf8') as stream: json.dump(receipt,stream,indent=2,sort_keys=True)
+    with checksums.open('x',encoding='ascii') as stream: stream.write(f"{receipt['archive']['sha256']}  {archive.name}\n")
+    return receipt
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--repository-root", type=Path, required=True)
-    parser.add_argument("--base-source-commit", required=True)
-    args = parser.parse_args(argv)
-    result = write_release_files(
-        args.repository_root,
-        args.repository_root / "dist/PersonalLibrarian",
-        args.repository_root / "release",
-        args.base_source_commit,
-    )
-    print(json.dumps(result, indent=2))
+def controlled_build(repository: Path, *, build_only: bool=False, allow_dirty: bool=False) -> dict:
+    repository=safe_path(repository)
+    verify_version_metadata(repository)
+    provenance=build_provenance(repository,allow_dirty=allow_dirty)
+    root=safe_path(repository/'tmp'/('controlled-build-'+uuid4().hex))
+    root.mkdir(parents=True,exist_ok=False)
+    context=root/'context.json';contract_path=root/'contract.json'
+    context.write_text(json.dumps(provenance),encoding='utf8')
+    env=dict(os.environ,PL_BUILD_CONTEXT=str(context),PL_BUILD_CONTRACT=str(contract_path))
+    command=[sys.executable,'-m','PyInstaller','--distpath',str(root/'dist'),'--workpath',str(root/'work'),str(repository/'packaging/personal_librarian.spec')]
+    subprocess.run(command,cwd=repository,env=env,check=True)
+    contract=json.loads(contract_path.read_text(encoding='utf8'))
+    if contract['provenance']!=provenance: raise ValueError('Build context mismatch.')
+    verify_provenance(repository,provenance,allow_dirty=allow_dirty)
+    distribution=root/'dist/PersonalLibrarian'
+    distribution_files(distribution,contract)
+    if build_only: return {'contract':str(contract_path),'distribution':str(distribution),'validation':'NOT_PERFORMED'}
+    return write_release_files(repository,distribution,repository/'release',contract,allow_dirty=allow_dirty)
+
+
+def main(argv=None):
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--repository-root',type=Path,required=True)
+    parser.add_argument('--build-only',action='store_true')
+    parser.add_argument('--allow-dirty',action='store_true',help='Disposable development build only; records actual dirty state.')
+    args=parser.parse_args(argv)
+    print(json.dumps(controlled_build(args.repository_root,build_only=args.build_only,allow_dirty=args.allow_dirty),indent=2))
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__=='__main__': raise SystemExit(main())
