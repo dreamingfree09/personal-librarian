@@ -140,6 +140,42 @@ def create_archive(distribution: Path, contract: dict, archive: Path) -> None:
         if created: temporary.unlink(missing_ok=True)
 
 
+def write_json_exclusive(path: Path, value: dict) -> None:
+    with path.open('x', encoding='utf8') as stream:
+        json.dump(value, stream, indent=2, sort_keys=True)
+
+
+def verify_release_files(output: Path, contract: dict) -> dict:
+    """Require a complete hash-bound build set; this is NOT package acceptance."""
+    output = safe_path(output)
+    marker = output / (ARCHIVE_NAME + '.build-complete.json')
+    with read_regular(marker) as stream:
+        completion = json.load(stream)
+    expected_names = {ARCHIVE_NAME, ARCHIVE_NAME + '.manifest.json', ARCHIVE_NAME + '.sha256'}
+    if (set(completion) != {'schema', 'files', 'contract_fingerprint', 'validation'}
+            or completion['schema'] != 'portable-build-set-v1'
+            or completion['validation'] != 'NOT_PERFORMED'
+            or completion['contract_fingerprint'] != contract['fingerprint']
+            or set(completion['files']) != expected_names):
+        raise ValueError('Incomplete or inconsistent build set.')
+    for name, record in completion['files'].items():
+        if file_record(output / name) != record:
+            raise ValueError('Build-set content drift.')
+    verify_archive(output / ARCHIVE_NAME, contract)
+    with read_regular(output / (ARCHIVE_NAME + '.manifest.json')) as stream:
+        receipt = json.load(stream)
+    if (receipt['provenance'] != contract['provenance']
+            or receipt['files'] != validate_contract(contract)
+            or receipt['build_contract_fingerprint'] != contract['fingerprint']
+            or receipt['archive'] != {'name': ARCHIVE_NAME, **file_record(output / ARCHIVE_NAME)}
+            or receipt['validation'] != {'status': 'NOT_PERFORMED', 'evidence': []}):
+        raise ValueError('Build receipt does not match the controlled contract.')
+    with read_regular(output / (ARCHIVE_NAME + '.sha256')) as stream:
+        if stream.read() != f"{receipt['archive']['sha256']}  {ARCHIVE_NAME}\n".encode('ascii'):
+            raise ValueError('Checksum receipt mismatch.')
+    return receipt
+
+
 def write_release_files(repository: Path, distribution: Path, output: Path, contract: dict, *, allow_dirty: bool=False) -> dict:
     repository=safe_path(repository);distribution=safe_path(distribution);output=safe_path(output)
     if not distribution.is_relative_to(repository/'tmp') or output!=repository/'release':
@@ -151,7 +187,8 @@ def write_release_files(repository: Path, distribution: Path, output: Path, cont
     archive=output/ARCHIVE_NAME
     manifest_path=output/(ARCHIVE_NAME+'.manifest.json')
     checksums=output/(ARCHIVE_NAME+'.sha256')
-    for target in (archive,manifest_path,checksums):
+    completion_path=output/(ARCHIVE_NAME+'.build-complete.json')
+    for target in (archive,manifest_path,checksums,completion_path):
         if target.exists(): raise FileExistsError('Refusing to overwrite release output.')
     create_archive(distribution,contract,archive)
     verify_provenance(repository,contract['provenance'],allow_dirty=allow_dirty)
@@ -160,9 +197,16 @@ def write_release_files(repository: Path, distribution: Path, output: Path, cont
              'build_contract_fingerprint':contract['fingerprint'],'files':contract['files'],
              'archive':{'name':archive.name,**file_record(archive)},
              'validation':{'status':'NOT_PERFORMED','evidence':[]}}
-    with manifest_path.open('x',encoding='utf8') as stream: json.dump(receipt,stream,indent=2,sort_keys=True)
-    with checksums.open('x',encoding='ascii') as stream: stream.write(f"{receipt['archive']['sha256']}  {archive.name}\n")
-    return receipt
+    write_json_exclusive(manifest_path, receipt)
+    with checksums.open('x',encoding='ascii',newline='\n') as stream: stream.write(f"{receipt['archive']['sha256']}  {archive.name}\n")
+    # Publish the completion marker last. An interrupted partial set remains
+    # preserved but cannot pass verify_release_files or be called accepted.
+    completion={'schema':'portable-build-set-v1',
+                'files':{path.name:file_record(path) for path in (archive,manifest_path,checksums)},
+                'contract_fingerprint':contract['fingerprint'],'validation':'NOT_PERFORMED'}
+    verify_provenance(repository,contract['provenance'],allow_dirty=allow_dirty)
+    write_json_exclusive(completion_path,completion)
+    return verify_release_files(output,contract)
 
 
 def controlled_build(repository: Path, *, build_only: bool=False, allow_dirty: bool=False) -> dict:

@@ -6,21 +6,83 @@ import ctypes
 from ctypes import wintypes
 import hashlib
 import json
+import base64
+import importlib.metadata
+import re
+import zipfile
 import os
 from pathlib import Path, PurePosixPath
 import stat
 
 SCHEMA = 'controlled-pyinstaller-v1'
-PRIVATE_SUFFIXES = {'.jpg','.jpeg','.gif','.webp','.tif','.tiff','.bmp','.mp4','.mov',
-                    '.csv','.db','.sqlite','.sqlite3','.wal','.shm','.bak','.backup',
-                    '.log','.tmp','.pem','.key','.pfx','.p12','.secret'}
+# Resource names alone are never permission to collect arbitrary application data.
+# These exceptions correspond to the reviewed spec's actual runtime requirements.
+FORBIDDEN_COMPONENTS = {'backup', 'backups', 'catalogue', 'inventories', 'logs',
+                        'credentials', 'secrets', '.ssh', '.aws'}
 
 
-def require_resource_name(name: str) -> None:
+def require_resource_name(name: str) -> str:
+    relative_name(name)
     lowered = name.casefold()
-    if (Path(name).suffix.casefold() in PRIVATE_SUFFIXES or lowered.endswith(('-wal','-shm'))
-            or any(part.startswith('.env') or part.casefold() in {'backups','catalogue','inventories','logs','credentials'} for part in name.split('/'))):
-        raise ValueError('Private/state content is forbidden even in a declared build graph.')
+    parts = lowered.split('/')
+    if any(part.startswith('.env') or part in FORBIDDEN_COMPONENTS for part in parts):
+        raise ValueError('Private/state resource is forbidden.')
+    if lowered == 'personallibrarian.exe':
+        return 'application-executable'
+    if lowered.startswith('_internal/') and Path(lowered).suffix in {'.dll', '.pyd'}:
+        return 'runtime-binary'
+    if lowered == '_internal/base_library.zip':
+        return 'python-base-library'
+    if re.fullmatch(r'_internal/pyside6/translations/(?:qt|qtbase)(?:_[a-z0-9]+)+\.qm', lowered):
+        return 'qt-translation'
+    if re.fullmatch(r'_internal/(numpy|pillow|pyside6|pyside6_addons|pyside6_essentials|shiboken6)-[^/]+\.dist-info/licenses/(?:[^/]+/)*(?:[a-z0-9_-]+_)?(?:license|copying)(?:\.(?:txt|md|rst))?', lowered):
+        return 'dependency-license'
+    if re.fullmatch(r'_internal/(numpy|pillow|pyside6|pyside6_addons|pyside6_essentials|shiboken6)-[^/]+\.dist-info/(?:delvewheel|installer|metadata|record|wheel|entry_points\.txt)', lowered):
+        return 'dependency-metadata'
+    raise ValueError('Resource lacks an explicit reviewed runtime approval.')
+
+
+def verify_resource_origin(name: str, source: Path, *, workpath: Path | None) -> None:
+    """Bind narrowly approved data to generated stdlib or installed wheel RECORD.
+
+    This is a trusted-build check, not authentication of an attacker-supplied
+    contract. No broad image/document/archive/config resource exception exists.
+    """
+    rule = require_resource_name(name)
+    if rule in {'application-executable', 'runtime-binary'}:
+        return
+    source = safe_path(source)
+    if rule == 'python-base-library':
+        if workpath is None or source != safe_path(workpath / 'base_library.zip'):
+            raise ValueError('Base library must be the controlled generated input.')
+        with read_regular(source) as stream, zipfile.ZipFile(stream) as archive:
+            names = archive.namelist()
+            if not names or len({n.casefold() for n in names}) != len(names):
+                raise ValueError('Invalid generated Python library.')
+            for member in names:
+                relative_name(member)
+                if not member.casefold().endswith('.pyc'):
+                    raise ValueError('Only generated Python modules belong in the base library.')
+        return
+    expected = '/'.join(name.split('/')[1:])
+    # Wheel RECORD binds both destination and source, not just a file extension
+    # or a convenient runtime directory. The selected environment is trusted.
+    for distribution in importlib.metadata.distributions():
+        for item in distribution.files or ():
+            if str(item).replace('\\', '/').casefold() != expected.casefold():
+                continue
+            if safe_path(Path(distribution.locate_file(item))) != source:
+                continue
+            # RECORD is the installed metadata authority and has no self-hash.
+            # Only its exact distribution-located file receives this exception.
+            if rule == 'dependency-metadata' and source.name.casefold() == 'record' and item.hash is None:
+                return
+            if item.hash is None or item.hash.mode != 'sha256':
+                continue
+            expected_hash = base64.urlsafe_b64decode(item.hash.value + '===').hex()
+            if file_record(source)['sha256'] == expected_hash:
+                return
+    raise ValueError('Runtime data is not bound to its installed dependency RECORD.')
 
 
 
@@ -156,8 +218,10 @@ def distribution_files(distribution: Path, contract: dict) -> list[Path]:
     return [distribution/name for name in sorted(expected,key=str.casefold)]
 
 
-def contract_from_inputs(distribution: Path, inputs: dict[str,Path], provenance: dict) -> dict:
+def contract_from_inputs(distribution: Path, inputs: dict[str,Path], provenance: dict, *, workpath: Path | None = None) -> dict:
     """Called only with reviewed build graph inputs, never an rglob of dist."""
+    for name, source in inputs.items():
+        verify_resource_origin(name, source, workpath=workpath)
     files={relative_name(name):file_record(source) for name,source in inputs.items()}
     material={'schema':SCHEMA,'provenance':provenance,'files':files}
     contract={**material,'fingerprint':seal(material)}
@@ -177,12 +241,12 @@ def record_pyinstaller_build(collection, repository: Path, workpath: Path, conte
         source=safe_path(Path(source))
         # This spec contains no owner/project data resources. Only generated
         # build products and the selected Python runtime may supply resources.
-        if not (source.is_relative_to(safe_path(workpath)) or source.is_relative_to(safe_path(Path(sys.base_prefix)))):
+        if not (source.is_relative_to(safe_path(workpath)) or any(source.is_relative_to(safe_path(Path(root))) for root in {sys.prefix, sys.base_prefix})):
             raise ValueError('Build input is outside the controlled runtime/build roots.')
         if kind in {'BINARY','EXTENSION'}:
             source=Path(process_collected_binary(str(source),destination,use_strip=False,use_upx=False,upx_exclude=[],target_arch=None,codesign_identity=None,entitlements_file=None,strict_arch_validation=(kind=='EXTENSION')))
         name=(Path(destination) if kind in {'EXECUTABLE','PKG'} else Path(collection.contents_directory or '')/destination).as_posix()
         if name in inputs: raise ValueError('Duplicate build graph artifact.')
         inputs[name]=source
-    contract=contract_from_inputs(Path(collection.name),inputs,context)
+    contract=contract_from_inputs(Path(collection.name),inputs,context,workpath=workpath)
     with receipt_path.open('x',encoding='utf8') as stream: json.dump(contract,stream,indent=2,sort_keys=True)

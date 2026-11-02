@@ -19,8 +19,8 @@ All path ancestors must be non-reparse. File reads additionally verify the opene
 Windows handle's actual path and physical identity before reading and reject links.
 The ZIP writer rechecks membership and hashes, checks bytes while archiving, verifies
 the resulting ZIP's exact paths/order/size/hashes, then publishes without overwrite.
-A failed candidate is not published; only its own temporary ZIP is removed. Existing
-outputs, external link targets and source data are preserved.
+A failed ZIP candidate is not published; only its own temporary ZIP is removed.
+Existing outputs, external link targets and source data are preserved.
 
 Build provenance records actual HEAD, tree, tracked-content/status fingerprints,
 clean/dirty state, Python, OS, architecture and installed dependencies. Clean is the
@@ -37,5 +37,43 @@ The contract is a local build-integrity record, not a signature or trust root ag
 a compromised builder/runtime or administrator. It assumes reviewed source and a
 trusted dependency environment. It does not establish reproducible native binaries,
 complete release acceptance, signing, or public-release approval. F07, F15 and G3/G4
-remain separate findings. This independent packaging branch does not include the
-unmerged F04 dependency correction; it must not be used to release the old Pillow.
+remain separate findings. The packaging branch includes the accepted F04 correction and must be validated
+with Pillow 13.0.0 and the qualified Qt 6.11.2 runtime.
+
+
+## Declared resource admission
+
+Resource classification is case-insensitive, including sensitive directory and
+configuration names. Ordinary runtime binaries remain supported. Other data is
+closed by default: an arbitrary declared image, document, inventory, archive or
+configuration does not become approved merely by appearing in COLLECT or a sealed
+contract. No general image/document suffix exception is enabled.
+
+The narrow runtime data approvals are the generated `base_library.zip` (exact
+controlled work location, Python-module-only members), Qt translation resources,
+and dependency licence/installation metadata for the named installed libraries.
+These resources must match both the source location and SHA-256 in the installed
+wheel RECORD. RECORD itself has no self-hash: only the exact metadata file located
+by its installed distribution is approved. This deliberately trusts the selected
+installed package metadata, not arbitrary declared inputs. The approved data policy is reapplied in contract validation,
+distribution validation, ZIP verification and release-receipt generation. Future
+runtime assets need a reviewed rule and origin check; naming a file like an asset
+is insufficient. Selected virtual-environment and base-Python roots are supported.
+The installed dependency metadata and reviewed builder remain trusted inputs.
+
+## Interrupted release-set publication
+
+The archive, manifest and checksum are create-only. A hash-bound
+`.build-complete.json` marker is written last, after all three are present and
+source provenance is checked again. `verify_release_files()` requires that marker,
+rechecks every file and the ZIP against the contract, and rejects incomplete or
+changed sets. This marker records build completeness, never acceptance:
+`validation = NOT_PERFORMED` remains mandatory. External smoke/release acceptance
+must be recorded separately against the exact archive hash.
+
+If manifest/checksum/marker publication fails, partial outputs are preserved and
+the command fails. They cannot pass the completion verifier; rerunning does not
+overwrite them. Operators must retain/review interrupted evidence and use a fresh
+isolated build checkout. This is not an atomic multi-file delivery transaction,
+public-release workflow or power-loss durability guarantee. G3/G4 delivery work
+remains open. Do not distribute a ZIP merely because its filename exists.

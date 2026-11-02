@@ -21,7 +21,7 @@ class ReleasePackagingTests(unittest.TestCase):
         self.root=Path(tmp.name);self.dist=self.root/'dist';self.dist.mkdir()
         self.inputs=self.root/'inputs';self.inputs.mkdir()
         self.expected={}
-        for name,data in [('PersonalLibrarian.exe',b'executable'),('_internal/runtime.dll',b'runtime'),('_internal/resource.json',b'{}')]:
+        for name,data in [('PersonalLibrarian.exe',b'executable'),('_internal/runtime.dll',b'runtime'),('_internal/second.pyd',b'extension')]:
             source=self.inputs/name;source.parent.mkdir(parents=True,exist_ok=True);source.write_bytes(data)
             dest=self.dist/name;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
             self.expected[name]=source
@@ -176,6 +176,98 @@ class ReleasePackagingTests(unittest.TestCase):
                 archive.writestr('PersonalLibrarian/'+name,data)
         with self.assertRaisesRegex(ValueError,'content mismatch'):
             BUILD_RELEASE.verify_archive(self.archive,self.contract)
+
+    def test_runtime_resource_rules_are_case_equivalent(self):
+        allowed = ('PersonalLibrarian.exe', '_internal/runtime.dll',
+                   '_internal/base_library.zip', '_internal/PySide6/translations/qt_en.qm',
+                   '_internal/PySide6/translations/qtbase_en.qm',
+                   '_internal/numpy-2.5.4.dist-info/METADATA')
+        for name in allowed:
+            for variant in (name, name.upper(), name.swapcase()):
+                self.assertEqual(C.require_resource_name(variant), C.require_resource_name(name))
+        for name in ('_internal/unapproved.txt', '_internal/unapproved.bin'):
+            for variant in (name, name.upper(), name.swapcase()):
+                with self.assertRaises(ValueError): C.require_resource_name(variant)
+
+    def test_declared_resource_cannot_self_approve(self):
+        for name in ('_internal/unapproved.txt', '_internal/base_library.zip'):
+            source = self.inputs / 'unapproved'; source.write_bytes(b'synthetic')
+            target = self.dist / name; target.write_bytes(b'synthetic')
+            try:
+                with self.assertRaises(ValueError):
+                    C.contract_from_inputs(self.dist, {**self.expected, name: source}, {'validation':'NOT_PERFORMED'})
+            finally: target.unlink()
+        # An unapproved name is rejected even with a freshly recomputed seal.
+        forged = json.loads(json.dumps(self.contract))
+        forged['files']['_internal/unapproved.txt'] = C.file_record(source)
+        forged['fingerprint'] = C.seal({k:v for k,v in forged.items() if k!='fingerprint'})
+        with self.assertRaises(ValueError): C.validate_contract(forged)
+        with self.assertRaises(ValueError): BUILD_RELEASE.create_archive(self.dist, forged, self.archive)
+        with self.assertRaises(ValueError): BUILD_RELEASE.verify_archive(self.archive, forged)
+
+    def test_generated_base_library_has_narrow_origin_and_membership(self):
+        work = self.root/'work'; work.mkdir(); source = work/'base_library.zip'
+        with zipfile.ZipFile(source,'w') as archive: archive.writestr('encodings/__init__.pyc',b'synthetic code')
+        name = '_internal/base_library.zip'; (self.dist/name).write_bytes(source.read_bytes())
+        contract = C.contract_from_inputs(self.dist, {**self.expected,name:source}, {'validation':'NOT_PERFORMED'}, workpath=work)
+        BUILD_RELEASE.create_archive(self.dist,contract,self.archive)
+        with zipfile.ZipFile(source,'a') as archive: archive.writestr('unapproved.txt',b'synthetic')
+        with self.assertRaises(ValueError): C.verify_resource_origin(name,source,workpath=work)
+
+    def test_runtime_data_requires_matching_dependency_record(self):
+        import base64, hashlib
+        from types import SimpleNamespace
+        name='_internal/PySide6/translations/qt_en.qm';source=self.inputs/'qt_en.qm';source.write_bytes(b'translation')
+        class Record:
+            hash=SimpleNamespace(mode='sha256',value=base64.urlsafe_b64encode(hashlib.sha256(source.read_bytes()).digest()).decode().rstrip('='))
+            def __str__(self): return 'PySide6/translations/qt_en.qm'
+        distribution=SimpleNamespace(files=[Record()],locate_file=lambda item:source)
+        with patch.object(C.importlib.metadata,'distributions',return_value=[distribution]):
+            C.verify_resource_origin(name.swapcase(),source,workpath=None)
+            source.write_bytes(b'changed')
+            with self.assertRaises(ValueError): C.verify_resource_origin(name,source,workpath=None)
+        with patch.object(C.importlib.metadata,'distributions',return_value=[]):
+            with self.assertRaises(ValueError): C.verify_resource_origin(name,source,workpath=None)
+
+    def prepare_release(self):
+        repository=self.root/'repo';repository.mkdir();(repository/'tmp').mkdir()
+        distribution=repository/'tmp'/'dist'
+        self.dist.rename(distribution);self.dist=distribution
+        return repository,repository/'release'
+
+    def test_incomplete_release_set_never_validates(self):
+        repository,output=self.prepare_release()
+        for suffix in ('.manifest.json','.sha256','.build-complete.json'):
+            # Separate synthetic roots; failed earlier outputs must survive.
+            destination=output if suffix=='.manifest.json' else self.root/('repo'+str(len(suffix)))
+            if destination!=output:
+                destination.mkdir();(destination/'tmp').mkdir()
+                import shutil
+                dist=destination/'tmp'/'dist';shutil.copytree(self.dist,dist)
+                repo=destination;destination=destination/'release'
+            else: repo=repository;dist=self.dist
+            original=Path.open
+            def interrupted(path,*args,**kwargs):
+                if path.name.endswith(suffix) and args and args[0]=='x':
+                    raise OSError('synthetic publication interruption')
+                return original(path,*args,**kwargs)
+            with patch.object(BUILD_RELEASE,'verify_version_metadata'),patch.object(BUILD_RELEASE,'verify_provenance'),patch.object(Path,'open',interrupted):
+                with self.assertRaises(OSError): BUILD_RELEASE.write_release_files(repo,dist,destination,self.contract)
+            self.assertTrue((destination/BUILD_RELEASE.ARCHIVE_NAME).is_file())
+            with self.assertRaises((OSError,ValueError)): BUILD_RELEASE.verify_release_files(destination,self.contract)
+            before={p.name:p.read_bytes() for p in destination.iterdir()}
+            with patch.object(BUILD_RELEASE,'verify_version_metadata'),patch.object(BUILD_RELEASE,'verify_provenance'):
+                with self.assertRaises(FileExistsError): BUILD_RELEASE.write_release_files(repo,dist,destination,self.contract)
+            self.assertEqual(before,{p.name:p.read_bytes() for p in destination.iterdir()})
+
+    def test_complete_release_set_is_unaccepted_and_hash_bound(self):
+        repository,output=self.prepare_release()
+        with patch.object(BUILD_RELEASE,'verify_version_metadata'),patch.object(BUILD_RELEASE,'verify_provenance'):
+            receipt=BUILD_RELEASE.write_release_files(repository,self.dist,output,self.contract)
+        self.assertEqual(receipt['validation']['status'],'NOT_PERFORMED')
+        self.assertEqual(BUILD_RELEASE.verify_release_files(output,self.contract),receipt)
+        (output/(BUILD_RELEASE.ARCHIVE_NAME+'.sha256')).write_text('changed')
+        with self.assertRaises(ValueError): BUILD_RELEASE.verify_release_files(output,self.contract)
 
     def git(self,*args):
         return subprocess.run(['git',*args],cwd=self.root,check=True,capture_output=True,text=True).stdout.strip()
