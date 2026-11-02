@@ -1,0 +1,58 @@
+name: CI finalisation diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    name: Python ${{ matrix.python }} / PySide6 ${{ matrix.pyside }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.13.16", "3.13.17"]
+        pyside: ["6.11.2", "6.12.0"]
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Controlled dependencies
+        shell: pwsh
+        run: |
+          python -m pip install "Pillow==12.3.0" "numpy==2.5.4" "PySide6==${{ matrix.pyside }}" "setuptools==80.9.0"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --no-deps --no-build-isolation -e .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          exit $LASTEXITCODE
+      - name: Checkout identity
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+          git log -1 --format="%P"
+          Write-Output 'PR head: ${{ github.event.pull_request.head.sha }}'
+          Write-Output 'PR base: ${{ github.event.pull_request.base.sha }}'
+      - name: Observe complete process lifecycles
+        shell: pwsh
+        run: |
+          python -X faulthandler -u tools/diagnose_test_process.py --groups
+          $testExit = $LASTEXITCODE
+          Write-Output "Diagnostic parent LASTEXITCODE=$testExit"
+          exit $testExit
+      - name: Preserve diagnostic evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: lifecycle-python-${{ matrix.python }}-pyside-${{ matrix.pyside }}
+          path: tmp/ci-finalisation/
+          retention-days: 14
