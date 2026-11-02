@@ -94,7 +94,10 @@ def main() -> int:
     parser.add_argument("--child", choices=["observed", "desktop-first", "desktop-last", "non-desktop"])
     parser.add_argument("--output", type=Path, default=Path("tmp/ci-finalisation"))
     parser.add_argument("--groups", action="store_true")
+    parser.add_argument("--desktop-repeats", type=int, default=1)
     args = parser.parse_args()
+    if args.desktop_repeats < 1:
+        parser.error("--desktop-repeats must be positive")
     if args.child:
         child(args.child)
         raise AssertionError("unittest returned without SystemExit")
@@ -111,8 +114,9 @@ def main() -> int:
         commands += [("full-2", commands[0][1])]
         for mode in ("observed", "desktop-first", "desktop-last", "non-desktop"):
             commands.append((mode, [*base, __file__, "--child", mode]))
-        commands.append(("desktop-all", [*base, "-m", "unittest", "discover", "-s", "tests",
-                                         "-p", "test_desktop*.py", "-v"]))
+        for repeat in range(args.desktop_repeats):
+            commands.append((f"desktop-all-{repeat + 1}", [*base, "-m", "unittest", "discover", "-s", "tests",
+                                                         "-p", "test_desktop*.py", "-v"]))
         for path in sorted(Path("tests").glob("test_desktop*.py")):
             commands.append((path.stem, [*base, "-m", "unittest", "discover", "-s", "tests",
                                          "-p", path.name, "-v"]))
