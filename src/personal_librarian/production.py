@@ -608,6 +608,8 @@ def independent_backup_readiness(
     layout = application_data_layout(app_data_root, safety_policy=policy)
     try:
         root = _validate_absolute_root(independent_backup_root, policy)
+        initial_source_device = _physical_device_identity(layout.catalogue_path)
+        initial_backup_device = _physical_device_identity(root)
         if not root.exists():
             return ProductionReport(
                 {
@@ -660,21 +662,46 @@ def independent_backup_readiness(
                 }
             )
         latest, verified = verified_backups[0]
+        # Measure the current actual snapshot location, not the creation-time
+        # destination or only its drive letter. Historical manifest fields stay
+        # unchanged and remain provenance, never current independence proof.
+        source_device = _physical_device_identity(layout.catalogue_path)
+        backup_device = _physical_device_identity(
+            Path(latest['manifest_path']).parent / latest['backup_database_filename']
+        )
+        stable = (source_device == initial_source_device and backup_device == initial_backup_device)
+        independence = ('unknown' if not source_device or not backup_device or not stable
+                        else 'same-device' if source_device == backup_device else 'confirmed')
         age_seconds = max(
             0.0,
             (datetime.now(UTC) - _parse_utc(str(latest["created_at"]))).total_seconds(),
         )
         reasons: list[str] = []
         readiness = "PASS"
+        if independence == 'same-device':
+            readiness = 'FAIL'
+            reasons.append('current production and backup are on the same physical device')
+        elif independence != 'confirmed':
+            readiness = 'WARN'
+            reasons.append('current physical-device independence is unavailable, unsupported or changed during evaluation')
         if rejected:
-            readiness = "WARN"
+            if readiness == 'PASS':
+                readiness = "WARN"
             reasons.append("one or more independent backup manifests were rejected")
         if age_seconds > DEFAULT_BACKUP_WARNING_AGE_SECONDS:
-            readiness = "WARN"
+            if readiness == 'PASS':
+                readiness = "WARN"
             reasons.append("latest independent backup is older than seven days")
         return ProductionReport(
             {
                 "summary": readiness,
+                "current_device_independence": independence,
+                "current_source_device_identity": source_device,
+                "current_backup_device_identity": backup_device,
+                "current_topology_stable": stable,
+                "historical_device_independence": latest.get('device_independence'),
+                "historical_source_device_identity": latest.get('source_device_identity'),
+                "historical_destination_device_identity": latest.get('destination_device_identity'),
                 "connected": True,
                 "independent_backup_root": str(root),
                 "valid_independent_backup_count": len(verified_backups),
@@ -1139,74 +1166,8 @@ def _manifest_backup_class(manifest: Mapping[str, Any]) -> str:
 
 
 def _physical_device_identity(path: Path) -> str | None:
-    """Return a stable host device number when measurable, without enumerating other storage."""
-
-    if sys.platform != "win32":
-        try:
-            return f"volume-device:{path.stat().st_dev}"
-        except OSError:
-            return None
-    drive, _ = ntpath.splitdrive(str(path))
-    if len(drive) != 2 or drive[1] != ":":
-        return None
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        class StorageDeviceNumber(ctypes.Structure):
-            _fields_ = (
-                ("device_type", wintypes.DWORD),
-                ("device_number", wintypes.DWORD),
-                ("partition_number", wintypes.DWORD),
-            )
-
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateFileW.argtypes = (
-            wintypes.LPCWSTR,
-            wintypes.DWORD,
-            wintypes.DWORD,
-            wintypes.LPVOID,
-            wintypes.DWORD,
-            wintypes.DWORD,
-            wintypes.HANDLE,
-        )
-        kernel32.CreateFileW.restype = wintypes.HANDLE
-        kernel32.DeviceIoControl.restype = wintypes.BOOL
-        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-        kernel32.CloseHandle.restype = wintypes.BOOL
-        handle = kernel32.CreateFileW(
-            f"\\\\.\\{drive}",
-            0,
-            0x00000001 | 0x00000002,
-            None,
-            3,
-            0,
-            None,
-        )
-        invalid_handle = wintypes.HANDLE(-1).value
-        if handle == invalid_handle:
-            return None
-        try:
-            number = StorageDeviceNumber()
-            returned = wintypes.DWORD()
-            ok = kernel32.DeviceIoControl(
-                handle,
-                0x002D1080,
-                None,
-                0,
-                ctypes.byref(number),
-                ctypes.sizeof(number),
-                ctypes.byref(returned),
-                None,
-            )
-            if not ok:
-                return None
-            return f"windows-storage-device:{number.device_number}"
-        finally:
-            kernel32.CloseHandle(handle)
-    except (OSError, ValueError):
-        return None
-
+    from personal_librarian.storage_identity import physical_device_identity
+    return physical_device_identity(path)
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")

@@ -325,7 +325,7 @@ class IndependentBackupTests(ProductionTestCase):
                 backup_root=r"Z:\never-access",
                 backup_class="independent-local",
             )
-        with self.assertRaisesRegex(ProductionError, "same physical device"):
+        with mock.patch('personal_librarian.production._physical_device_identity', return_value='same-device'), self.assertRaisesRegex(ProductionError, "same physical device"):
             create_backup(
                 app_data_root=self.app_root,
                 backup_root=self.independent_root,
@@ -370,9 +370,11 @@ class IndependentBackupTests(ProductionTestCase):
     def test_readiness_freshness_disconnection_and_catalogue_health_are_separate(self) -> None:
         create_backup(app_data_root=self.app_root)
         backup = self.create_independent()
-        ready = independent_backup_readiness(
-            app_data_root=self.app_root, independent_backup_root=self.independent_root
-        ).values
+        with mock.patch('personal_librarian.production._physical_device_identity',
+                        side_effect=lambda p: 'production' if self.app_root in Path(p).parents else 'independent'):
+            ready = independent_backup_readiness(
+                app_data_root=self.app_root, independent_backup_root=self.independent_root
+            ).values
         self.assertEqual(ready["summary"], "PASS")
         manifest_path = Path(backup["manifest_path"])
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -380,9 +382,11 @@ class IndependentBackupTests(ProductionTestCase):
             datetime.now(UTC) - timedelta(days=8)
         ).isoformat().replace("+00:00", "Z")
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        stale = independent_backup_readiness(
-            app_data_root=self.app_root, independent_backup_root=self.independent_root
-        ).values
+        with mock.patch('personal_librarian.production._physical_device_identity',
+                        side_effect=lambda p: 'production' if self.app_root in Path(p).parents else 'independent'):
+            stale = independent_backup_readiness(
+                app_data_root=self.app_root, independent_backup_root=self.independent_root
+            ).values
         self.assertEqual(stale["summary"], "WARN")
         health = production_health(
             app_data_root=self.app_root,
