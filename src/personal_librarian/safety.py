@@ -102,6 +102,41 @@ def assess_operation(mode: OperationMode, intent: PathIntent) -> OperationDecisi
     )
 
 
+def windows_path_kind(path: str) -> str:
+    """Classify syntax only; never resolve or probe a Windows namespace.
+
+    Ordinary UNC shares remain supported. Win32/NT device aliases are not
+    ordinary shares, including when their separators use forward slashes.
+    """
+    value = path.replace("/", "\\")
+    if (value.startswith(("\\\\?\\", "\\\\.\\", "\\??\\", "\\\\??\\"))
+            or value in {"\\\\?", "\\\\.", "\\??", "\\\\??"}
+            or re.match(r"^\\(?:Device|GLOBALROOT|GLOBAL\?\?|DosDevices)(?:\\|$)", value, re.I)):
+        return "device"
+    if not value or any(ord(c) < 32 for c in value):
+        return "invalid"
+    if value.startswith("\\\\"):
+        parts = value[2:].split("\\")
+        if (len(parts) < 2 or any(p in {"", ".", ".."} for p in parts[:2])
+                or any(re.search(r'[<>:"|?*]', p) or p.endswith((" ", ".")) for p in parts[:2])):
+            return "malformed-unc"
+        tail = "\\".join(parts[2:])
+        kind = "unc"
+    elif re.match(r"^[A-Za-z]:", value):
+        tail = value[2:]
+        kind = "drive-absolute" if tail.startswith("\\") else "drive-relative"
+    else:
+        tail = value
+        kind = "root-relative" if value.startswith("\\") else "relative"
+    for part in tail.split("\\"):
+        if part in {"", ".", ".."}:
+            continue
+        if (re.search(r'[<>:"|?*]', part) or part.endswith((" ", "."))
+                or part.split(".", 1)[0].upper() in _RESERVED_WINDOWS_NAMES):
+            return "invalid"
+    return kind
+
+
 class PathSafetyPolicy:
     """Assess Windows paths without opening, resolving, or enumerating them."""
 
@@ -142,6 +177,7 @@ class PathSafetyPolicy:
             return self._blocked("NUL_BYTE", "Path contains a NUL byte.", raw_path, None, intent)
 
         candidate = raw_path.replace("/", "\\")
+        kind = windows_path_kind(candidate)
         device_match = self._DEVICE_DRIVE_PATTERN.match(candidate)
         if device_match:
             drive = f"{device_match.group(1).upper()}:"
@@ -154,6 +190,12 @@ class PathSafetyPolicy:
                 candidate,
                 intent,
             )
+
+        if kind == "device":
+            return self._blocked("UNSUPPORTED_DEVICE_PATH", "Windows device namespaces are unsupported.", raw_path, candidate, intent)
+        if kind in {"invalid", "malformed-unc"}:
+            code = "MALFORMED_UNC_PATH" if kind == "malformed-unc" else "INVALID_WINDOWS_PATH"
+            return self._blocked(code, "Path is not supported Windows filesystem syntax.", raw_path, candidate, intent)
 
         explicit_match = self._EXPLICIT_DRIVE_PATTERN.match(candidate)
         if explicit_match:
@@ -225,6 +267,11 @@ class PathSafetyPolicy:
                 intent,
             )
 
+        kind = windows_path_kind(base)
+        if kind == "device":
+            return self._blocked("UNSUPPORTED_DEVICE_PATH", "Device namespaces cannot be relative-path bases.", base, base, intent)
+        if kind not in {"drive-absolute", "unc"}:
+            return self._blocked("INVALID_BASE_PATH", "Relative-path base must be a supported absolute path.", base, base, intent)
         explicit_match = self._EXPLICIT_DRIVE_PATTERN.match(base)
         if explicit_match:
             drive = f"{explicit_match.group(1).upper()}:"
