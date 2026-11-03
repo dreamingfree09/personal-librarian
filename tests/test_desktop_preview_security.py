@@ -99,7 +99,7 @@ class PreviewSecurityTests(unittest.TestCase):
                 self.reject(path)
         original=Image.Image.save
         def interrupted(image, target, *args, **kwargs):
-            Path(target).write_bytes(b'partial')
+            target.write(b'partial')
             raise OSError('synthetic cache failure')
         with patch.object(Image.Image,'save',interrupted):
             self.reject(path)
@@ -107,7 +107,7 @@ class PreviewSecurityTests(unittest.TestCase):
     def test_cache_reuse_and_worker_emission(self):
         path=self.image('cached.png','PNG')
         first=self.service.load(path,content_identity='cached')
-        with patch('personal_librarian.desktop.thumbnails.Image.open',side_effect=AssertionError('should use cache')):
+        with patch.object(Path,'open',side_effect=AssertionError('should not reread source')):
             second=self.service.load(path,content_identity='cached')
         self.assertEqual(first,second)
         results=[]
