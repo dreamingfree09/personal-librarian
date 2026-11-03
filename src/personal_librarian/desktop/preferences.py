@@ -36,6 +36,9 @@ class PreferenceStore:
         self, app_data_root: str | Path, *, safety_policy: PathSafetyPolicy | None = None
     ) -> None:
         self.policy = safety_policy or PathSafetyPolicy()
+        root_check = self.policy.check_path(app_data_root, intent=PathIntent.READ)
+        if not root_check.allowed:
+            raise OSError(f"Unsafe application-data root: {root_check.code}")
         self.path = Path(app_data_root) / "state" / "ui_preferences.json"
 
     def load(self) -> UiPreferences:
