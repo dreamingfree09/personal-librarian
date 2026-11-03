@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from personal_librarian.safety import PathIntent, PathSafetyPolicy
+from personal_librarian.desktop.state_files import StateFiles
 
 PREFERENCES_VERSION = 1
 ALLOWED_PAGE_SIZES = (25, 50, 100)
@@ -40,12 +41,11 @@ class PreferenceStore:
         if not root_check.allowed:
             raise OSError(f"Unsafe application-data root: {root_check.code}")
         self.path = Path(app_data_root) / "state" / "ui_preferences.json"
+        self.state = StateFiles(app_data_root, self.policy)
 
     def load(self) -> UiPreferences:
-        if not self.path.is_file():
-            return UiPreferences()
         try:
-            value = json.loads(self.path.read_text(encoding="utf-8"))
+            value = json.loads(self.state.read(self.path, limit=64*1024).decode('utf-8'))
             return self._validated(value)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return UiPreferences()
@@ -55,13 +55,11 @@ class PreferenceStore:
         result = self.policy.check_path(str(self.path), intent=PathIntent.WRITE)
         if not result.allowed:
             raise OSError(f"Unsafe UI preference path: {result.code}")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.incomplete")
-        temporary.write_text(
-            json.dumps(asdict(checked), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+        self.state.publish(
+            self.path,
+            (json.dumps(asdict(checked), ensure_ascii=False, indent=2) + "\n").encode('utf-8'),
+            replace=True,
         )
-        temporary.replace(self.path)
 
     @staticmethod
     def _validated(value: Any) -> UiPreferences:
