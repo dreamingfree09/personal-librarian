@@ -53,7 +53,7 @@ def write_packaged_smoke_report(service: DesktopDataService, output_path: str | 
             generated = thumbnail_service.load(
                 source, content_identity=item["content_identity_key"]
             )
-            image = QImage(str(generated.cache_path)) if generated.cache_path else QImage()
+            image = QImage.fromData(generated.image_bytes, 'PNG') if generated.image_bytes else QImage()
             if not image.isNull():
                 viewer = ImageViewerDialog(image, "packaged smoke")
                 viewer.actual_size()
