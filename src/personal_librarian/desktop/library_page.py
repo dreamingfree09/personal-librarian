@@ -301,6 +301,9 @@ class LibraryPage(QWidget):
         self.m30_enabled = False
         self._generation = 0
         self._year_request_generation = 0
+        self._album_request_generation = 0
+        self._album_member_request: tuple[int, str] | None = None
+        self._loaded_album_uuid: str | None = None
         self._collection_request_generation = 0
         self._history_request_generation = 0
         self.thumbnail_service = ThumbnailService(service.layout.root, max_size=(160, 160))
@@ -373,6 +376,7 @@ class LibraryPage(QWidget):
         )
         self.albums.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.albums.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.albums.setSelectionMode(QAbstractItemView.SingleSelection)
         self.albums.setMaximumHeight(190)
         self.albums.itemSelectionChanged.connect(self._album_selected)
         right_layout.addWidget(self.albums)
@@ -424,6 +428,7 @@ class LibraryPage(QWidget):
         detail_layout.addWidget(self.members)
         self.remove_button = QPushButton("Remove selected from album")
         self.remove_button.clicked.connect(self._remove_selected)
+        self.remove_button.setEnabled(False)
         detail_layout.addWidget(self.remove_button)
         content_split.addWidget(detail)
         content_split.setSizes([700, 420])
@@ -605,6 +610,9 @@ class LibraryPage(QWidget):
         self.pool.start(worker)
 
     def refresh(self) -> None:
+        self._year_request_generation += 1
+        self.album_rows = []
+        self._render_albums()
         self.run_async(
             lambda: self._load_top_level(),
             self._top_level_loaded,
@@ -680,7 +688,11 @@ class LibraryPage(QWidget):
 
     def _year_selected(self) -> None:
         item = self.years.currentItem()
-        if item is None:
+        if item is None or not item.isSelected():
+            self.has_year_selection = False
+            self._year_request_generation += 1
+            self.album_rows = []
+            self._render_albums()
             return
         self.current_year = item.data(CONTENT_ROLE)
         self.has_year_selection = True
@@ -688,6 +700,8 @@ class LibraryPage(QWidget):
         self._reload_year()
 
     def _reload_year(self) -> None:
+        self.album_rows = []
+        self._render_albums()
         if not self.has_year_selection:
             return
         if self.m30_enabled and self.date_filter.currentIndex() > 0:
@@ -814,6 +828,13 @@ class LibraryPage(QWidget):
     def _render_albums(self) -> None:
         if not hasattr(self, "album_rows"):
             return
+        self._invalidate_album_members()
+        # Replacing rows must not reuse a numeric currentRow as owner selection.
+        self.albums.blockSignals(True)
+        self.albums.clearSelection()
+        self.albums.setCurrentCell(-1, -1)
+        self.albums.setRowCount(0)
+        self.albums.blockSignals(False)
         mode = self.album_filter.currentText().casefold()
         rows = [row for row in self.album_rows if mode == "all" or row["state"] == mode]
         self.albums.setRowCount(len(rows))
@@ -836,19 +857,46 @@ class LibraryPage(QWidget):
 
     def _selected_album(self) -> dict[str, Any] | None:
         cell = self.albums.item(self.albums.currentRow(), 0)
-        if cell is None:
+        if cell is None or not cell.isSelected():
             return None
         uuid = cell.data(ALBUM_ROLE)
         return next((row for row in self.album_rows if row["album_uuid"] == uuid), None)
 
+    def _invalidate_album_members(self) -> None:
+        self._album_request_generation += 1
+        self._album_member_request = None
+        self._loaded_album_uuid = None
+        self.member_rows = []
+        self._generation += 1
+        self.members.clear()
+        self.remove_button.setEnabled(False)
+        self.album_detail.setText("Select an album to view its members.")
+
     def _album_selected(self) -> None:
         album = self._selected_album()
+        self._invalidate_album_members()
         if album is None:
             return
-        self.run_async(lambda: self.service.album_members(album["album_uuid"]), self._members_loaded)
+        uuid = str(album["album_uuid"])
+        request = (self._album_request_generation, uuid)
+        self._album_member_request = request
+        self.album_detail.setText(f"Loading members of {album['name']}…")
+        self.run_async(
+            lambda: self.service.album_members(uuid),
+            lambda result: self._members_loaded(result, request),
+        )
 
-    def _members_loaded(self, result: dict[str, Any]) -> None:
+    def _members_loaded(self, result: dict[str, Any], request: tuple[int, str]) -> None:
+        selected = self._selected_album()
+        if (request != self._album_member_request or selected is None
+                or str(selected["album_uuid"]) != request[1]):
+            return
         album = result["album"]
+        if str(album["album_uuid"]) != request[1]:
+            return
+        self._album_member_request = None
+        self._loaded_album_uuid = request[1]
+        self.remove_button.setEnabled(album["state"] == selected["state"] == "active")
         self.member_rows = result["members"]
         self.album_detail.setText(
             f"{album['name']} · {album['state']} · {album['member_count']} members\n"
@@ -861,6 +909,7 @@ class LibraryPage(QWidget):
                 f"{item_filename(row)}\n{row.get('source') or 'Unknown source'} · "
                 f"{format_bytes(row.get('size_bytes'))}\nContent {row['content_identity_id']}"
             )
+            item.setData(ALBUM_ROLE, self._loaded_album_uuid)
             self._bind_preview(item, row, f"album:{album['album_uuid']}")
             self.members.addItem(item)
 
@@ -1051,8 +1100,12 @@ class LibraryPage(QWidget):
         if album["state"] != "active":
             QMessageBox.warning(self, "Archived album", "Restore the album before adding content.")
             return
+        context = (self._album_request_generation, str(album["album_uuid"]))
         if not self._confirm(f"Add {len(ids)} logical content item(s) to {album['name']}?"):
             return
+        if not self._album_context_matches(context):
+            return
+        self._invalidate_album_members()
         actor, reason = evidence
         self.run_async(
             lambda: [self.service.set_album_membership(album_uuid=album["album_uuid"],
@@ -1061,16 +1114,41 @@ class LibraryPage(QWidget):
             lambda _: self._reload_year(),
         )
 
+    def _album_context_matches(self, context: tuple[int, str]) -> bool:
+        album = self._selected_album()
+        return (album is not None and context == (
+            self._album_request_generation, str(album["album_uuid"])
+        ))
+
     def _remove_selected(self) -> None:
-        album, evidence = self._selected_album(), self._actor_reason()
-        ids = [int(item.data(CONTENT_ROLE)) for item in self.members.selectedItems()][:MAX_MUTATION_SELECTION]
-        if album is None or evidence is None or not ids:
+        album = self._selected_album()
+        selected = self.members.selectedItems()[:MAX_MUTATION_SELECTION]
+        if album is None or not selected:
             return
+        uuid = str(album["album_uuid"])
+        loaded_ids = {int(row["content_identity_id"]) for row in self.member_rows}
+        if (self._loaded_album_uuid != uuid or self._album_member_request is not None
+                or any(item.data(ALBUM_ROLE) != uuid
+                       or int(item.data(CONTENT_ROLE)) not in loaded_ids for item in selected)):
+            QMessageBox.warning(self, "Album selection changed", "Select the album again before removing members.")
+            return
+        if album["state"] != "active":
+            QMessageBox.warning(self, "Archived album", "Restore the album before removing content.")
+            return
+        evidence = self._actor_reason()
+        if evidence is None:
+            return
+        ids = [int(item.data(CONTENT_ROLE)) for item in selected]
+        context = (self._album_request_generation, uuid)
         if not self._confirm(f"Remove {len(ids)} logical content item(s) from {album['name']}?"):
             return
+        # A modal confirmation processes Qt events; selection may change meanwhile.
+        if not self._album_context_matches(context) or self._loaded_album_uuid != uuid:
+            return
+        self._invalidate_album_members()
         actor, reason = evidence
         self.run_async(
-            lambda: [self.service.set_album_membership(album_uuid=album["album_uuid"],
+            lambda: [self.service.set_album_membership(album_uuid=uuid,
                                                        content_identity_id=value, present=False,
                                                        actor=actor, reason=reason) for value in ids],
             lambda _: self._reload_year(),
