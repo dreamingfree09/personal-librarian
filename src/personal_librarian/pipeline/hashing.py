@@ -6,7 +6,6 @@ import hashlib
 import json
 import ntpath
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 from personal_librarian.catalogue.database import connect_existing_catalogue, initialise_catalogue
@@ -22,6 +21,7 @@ from personal_librarian.pipeline.checkpoints import (
 from personal_librarian.pipeline.common import (
     PipelineInterrupted,
     PipelineReport,
+    format_mtime_ns,
     get_or_create_source,
     item_key,
     mark_interrupted,
@@ -235,7 +235,7 @@ def run_sha256(
             if cached is not None:
                 digest = str(cached[1])
                 status = "zero_byte_reused" if before[0] == 0 else "hash_reused"
-                modified = datetime.fromtimestamp(before_state.st_mtime, timezone.utc).isoformat()
+                modified = format_mtime_ns(before[1])
                 connection.execute(
                     """
                     UPDATE physical_instances
@@ -310,7 +310,7 @@ def run_sha256(
             else:
                 digest = digest_builder.hexdigest()
                 status = "zero_byte_hashed" if before[0] == 0 else "hash_success"
-                modified = datetime.fromtimestamp(after_state.st_mtime, timezone.utc).isoformat()
+                modified = format_mtime_ns(after[1])
                 connection.execute(
                     """
                     UPDATE physical_instances

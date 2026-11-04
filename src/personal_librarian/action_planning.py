@@ -10,7 +10,7 @@ import re
 import shutil
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -646,16 +646,17 @@ _AWARE_TIMESTAMP = re.compile(
 
 
 def _catalogue_mtime_ns(value: object) -> int | None:
-    """Convert an aware catalogue timestamp to exact epoch nanoseconds."""
+    """Decode an explicit nanosecond timestamp; never infer lost historical precision."""
 
     if value is None:
         return None
     match = _AWARE_TIMESTAMP.fullmatch(str(value))
-    if match is None:
+    if match is None or len(match.group("fraction") or "") != 9:
         return None
     zone = "+00:00" if match.group("zone") == "Z" else match.group("zone")
     instant = datetime.fromisoformat(f"{match.group('seconds')}{zone}")
-    seconds = int(instant.timestamp())
+    delta = instant - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    seconds = delta.days * 86_400 + delta.seconds
     fraction = (match.group("fraction") or "").ljust(9, "0")
     return seconds * 1_000_000_000 + int(fraction or "0")
 
@@ -736,7 +737,9 @@ def _preflight_source(
         return "source_unreadable"
     if stat_result.st_size != int(item[10]):
         return "source_size_changed"
-    if item[12] is not None and stat_result.st_mtime_ns != int(item[12]):
+    if item[12] is None or _catalogue_mtime_ns(item[11]) != item[12]:
+        return "source_mtime_precision_unavailable"
+    if stat_result.st_mtime_ns != int(item[12]):
         return "source_mtime_changed"
     return "PASS"
 
