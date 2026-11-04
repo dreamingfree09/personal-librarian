@@ -561,13 +561,27 @@ def resolve_preferred_date(
         "SELECT * FROM content_preferred_dates WHERE content_identity_id = ?",
         (content_identity_id,),
     ).fetchone()
-    if current is not None and current["selection_method"] == SelectionMethod.OWNER_SELECTION.value:
-        return {"changed": False, "owner_override_preserved": True,
-                "status": current["status"], "reason": "owner_override"}
     evidence_rows = connection.execute(
         "SELECT * FROM content_date_evidence WHERE content_identity_id = ? ORDER BY date_evidence_id",
         (content_identity_id,),
     ).fetchall()
+    if current is not None and current["selection_method"] == SelectionMethod.OWNER_SELECTION.value:
+        # Policy evidence may explain an override, but cannot replace it or revive
+        # the basis of an earlier owner action.
+        owner_id = int(current["selected_evidence_id"])
+        owner = next(row for row in evidence_rows if int(row["date_evidence_id"]) == owner_id)
+        basis = [(owner_id, BasisRole.SELECTED)]
+        for row in evidence_rows:
+            if row["evidence_type"] == EvidenceType.OWNER_SET.value:
+                continue
+            role = (BasisRole.CORROBORATING if compatible(_row_value(owner), _row_value(row))
+                    else BasisRole.IGNORED_LOWER_AUTHORITY if _tier(row["evidence_type"]) == 5
+                    else BasisRole.CONFLICTING)
+            basis.append((int(row["date_evidence_id"]), role))
+        basis_changed = _sync_basis(connection, int(current["preferred_date_id"]), basis)
+        return {"changed": False, "basis_changed": basis_changed,
+                "owner_override_preserved": True,
+                "status": current["status"], "reason": "owner_override"}
     result = evaluate_policy(evidence_rows)
     selected = None
     if result.selected_evidence_id is not None:
@@ -582,7 +596,8 @@ def resolve_preferred_date(
         current["policy_name"], current["policy_version"],
     )
     if current_signature == desired_signature:
-        return {"changed": False, "owner_override_preserved": False,
+        basis_changed = _sync_basis(connection, int(current["preferred_date_id"]), result.basis)
+        return {"changed": False, "basis_changed": basis_changed, "owner_override_preserved": False,
                 "status": result.status.value, "reason": result.reason}
     previous = _preferred_snapshot(current)
     selected_values = _selected_values(selected)
@@ -624,7 +639,7 @@ def resolve_preferred_date(
              *selected_values, desired_signature[3], desired_signature[4],
              analysis_run_id, preferred_id),
         )
-    _sync_basis(connection, preferred_id, result.basis)
+    basis_changed = _sync_basis(connection, preferred_id, result.basis)
     new_row = connection.execute(
         "SELECT * FROM content_preferred_dates WHERE preferred_date_id=?", (preferred_id,)
     ).fetchone()
@@ -633,7 +648,7 @@ def resolve_preferred_date(
         actor_type="system", actor="preferred-date-policy-v1", provenance="deterministic-policy",
         reason=result.reason, previous=previous, current=_preferred_snapshot(new_row),
     )
-    return {"changed": True, "owner_override_preserved": False,
+    return {"changed": True, "basis_changed": basis_changed, "owner_override_preserved": False,
             "status": result.status.value, "reason": result.reason,
             "preferred_date_id": preferred_id}
 
@@ -643,7 +658,7 @@ def set_owner_preferred_date(
     actor: str, action_id: str, reason: str | None = None,
     provenance: str = "owner-manual", safety_policy: PathSafetyPolicy | None = None,
 ) -> dict[str, object]:
-    """Create/reuse immutable owner evidence and select it as the current projection."""
+    """Apply one content-scoped owner action, or replay it without restoring old authority."""
 
     parsed = parse_partial_date(value)
     checked_actor = _text(actor, "Actor", 200)
@@ -652,22 +667,23 @@ def set_owner_preferred_date(
     checked_provenance = _text(provenance, "Provenance", 500)
     with _write_connection(database_path, safety_policy) as connection:
         _content_exists(connection, content_identity_id)
+        request = {"value": parsed.render(), "actor": checked_actor,
+                   "reason": checked_reason, "provenance": checked_provenance}
+        replay = _owner_action_replay(connection, content_identity_id, checked_action, request)
+        if replay is not None:
+            return replay
         record = record_evidence(connection, EvidenceInput(
             content_identity_id=content_identity_id, evidence_type=EvidenceType.OWNER_SET,
             raw_value=value, value=parsed, actor_type="owner",
             actor_identifier=checked_actor, provenance=checked_provenance,
             owner_action_key=checked_action,
         ))
+        if not record.created:
+            raise DateEvidenceError("Owner action evidence has no verifiable completed history.")
         current = connection.execute(
             "SELECT * FROM content_preferred_dates WHERE content_identity_id=?",
             (content_identity_id,),
         ).fetchone()
-        if current is not None and current["selection_method"] == "owner_selection" \
-                and int(current["selected_evidence_id"]) == record.date_evidence_id:
-            return {"changed": False, "evidence_created": record.created,
-                    "date_evidence_id": record.date_evidence_id,
-                    "preferred_date_id": int(current["preferred_date_id"]),
-                    "value": parsed.render()}
         previous = _preferred_snapshot(current)
         selected_values = _selected_values(connection.execute(
             "SELECT * FROM content_date_evidence WHERE date_evidence_id=?",
@@ -724,10 +740,88 @@ def set_owner_preferred_date(
             connection, event_type, preferred_id, content_identity_id,
             actor_type="owner", actor=checked_actor, provenance=checked_provenance,
             reason=checked_reason, previous=previous, current=_preferred_snapshot(new_row),
+            details={"owner_action_id": checked_action, "owner_request": request},
         )
         return {"changed": True, "evidence_created": record.created,
                 "date_evidence_id": record.date_evidence_id,
                 "preferred_date_id": preferred_id, "value": parsed.render()}
+
+
+def _owner_action_replay(
+    connection: sqlite3.Connection, content_id: int, action_id: str,
+    request: Mapping[str, object],
+) -> dict[str, object] | None:
+    """Consult immutable history under the caller's BEGIN IMMEDIATE write lock.
+
+    Date action IDs retain the original evidence-key scope: one content identity.
+    Legacy keys are one-way hashes, but a supplied action ID can be checked against
+    each retained owner row using that row's original raw value. No history rewrite
+    or guessing an unknown action ID is needed.
+    """
+    rows = connection.execute(
+        "SELECT * FROM content_date_evidence WHERE content_identity_id=? "
+        "AND evidence_type='owner_set' ORDER BY date_evidence_id", (content_id,),
+    ).fetchall()
+    events = connection.execute(
+        "SELECT * FROM organisation_events WHERE content_identity_id=? "
+        "AND actor_type='owner' AND event_type IN "
+        "('preferred_date_owner_set','preferred_date_changed') ORDER BY organisation_event_id",
+        (content_id,),
+    ).fetchall()
+    decoded = []
+    for event in events:
+        try:
+            details = json.loads(event['details_json'])
+            if not isinstance(details, dict):
+                raise ValueError('Expected event object')
+        except (ValueError, TypeError) as exc:
+            raise DateEvidenceError('Owner action history cannot be verified.') from exc
+        decoded.append((event, details))
+    matching = []
+    for row in rows:
+        legacy_key = evidence_key(EvidenceInput(
+            content_identity_id=content_id, evidence_type=EvidenceType.OWNER_SET,
+            raw_value=row['raw_value'], value=_row_value(row), actor_type='owner',
+            actor_identifier=row['actor_identifier'], provenance=row['provenance'],
+            owner_action_key=action_id,
+        ))
+        linked = [(event, details) for event, details in decoded
+                  if isinstance(details.get('new'), dict)
+                  and details['new'].get('selected_evidence_id') == row['date_evidence_id']]
+        explicit = any(details.get('owner_action_id') == action_id for _, details in linked)
+        if explicit and legacy_key != row['evidence_key']:
+            raise DateEvidenceError('Owner action identity disagrees with immutable evidence.')
+        if legacy_key == row['evidence_key'] or explicit:
+            matching.append((row, linked))
+    if not matching:
+        # A new-format action without its immutable evidence is not reusable.
+        if any(details.get('owner_action_id') == action_id for _, details in decoded):
+            raise DateEvidenceError('Owner action history has no matching evidence.')
+        return None
+    if len(matching) != 1:
+        raise DateEvidenceError('Owner action ID is ambiguous in immutable history.')
+    row, linked = matching[0]
+    if not linked:
+        raise DateEvidenceError('Owner action evidence has no verifiable completed history.')
+    for event, details in linked:
+        recorded = {'value': _row_value(row).render(), 'actor': event['actor_identifier'],
+                    'reason': event['reason'], 'provenance': event['provenance']}
+        if (recorded != request or row['actor_identifier'] != recorded['actor']
+                or row['provenance'] != recorded['provenance']
+                or ('owner_action_id' in details and details['owner_action_id'] != action_id)
+                or ('owner_request' in details and details['owner_request'] != recorded)):
+            raise DateEvidenceError('Owner action ID was already used for a different request.')
+    current = connection.execute(
+        'SELECT * FROM content_preferred_dates WHERE content_identity_id=?', (content_id,)
+    ).fetchone()
+    if current is None:
+        raise DateEvidenceError('Completed owner action has no current preferred projection.')
+    return {'changed': False, 'evidence_created': False, 'replayed': True,
+            'date_evidence_id': int(row['date_evidence_id']),
+            'preferred_date_id': int(current['preferred_date_id']), 'value': request['value'],
+            'current_selected_evidence_id': current['selected_evidence_id'],
+            'is_current': (current['selection_method'] == 'owner_selection'
+                           and current['selected_evidence_id'] == row['date_evidence_id'])}
 
 
 def replace_owner_preferred_date(
@@ -920,23 +1014,32 @@ def _current_reason(
 def _sync_basis(
     connection: sqlite3.Connection, preferred_id: int,
     desired: Sequence[tuple[int, BasisRole]],
-) -> None:
-    desired_ids = {evidence_id for evidence_id, _ in desired}
-    connection.execute(
-        "UPDATE preferred_date_basis SET basis_state='superseded', "
-        "superseded_at=COALESCE(superseded_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) "
-        "WHERE preferred_date_id=? AND basis_state='current' "
-        + ("AND date_evidence_id NOT IN (" + ",".join("?" * len(desired_ids)) + ")"
-           if desired_ids else ""),
-        (preferred_id, *sorted(desired_ids)),
-    )
-    for evidence_id, role in desired:
+) -> bool:
+    wanted = {evidence_id: role.value for evidence_id, role in desired}
+    existing = {int(row["date_evidence_id"]): row for row in connection.execute(
+        "SELECT * FROM preferred_date_basis WHERE preferred_date_id=?", (preferred_id,)
+    )}
+    changed = False
+    for evidence_id, row in existing.items():
+        if row["basis_state"] == "current" and evidence_id not in wanted:
+            connection.execute(
+                "UPDATE preferred_date_basis SET basis_state='superseded', "
+                "superseded_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                "WHERE preferred_date_basis_id=?", (row["preferred_date_basis_id"],)
+            )
+            changed = True
+    for evidence_id, role in wanted.items():
+        row = existing.get(evidence_id)
+        if row is not None and row["basis_state"] == "current" and row["basis_role"] == role:
+            continue
         connection.execute(
             "INSERT INTO preferred_date_basis(preferred_date_id,date_evidence_id,basis_role) "
             "VALUES(?,?,?) ON CONFLICT(preferred_date_id,date_evidence_id) DO UPDATE SET "
             "basis_role=excluded.basis_role,basis_state='current',superseded_at=NULL",
-            (preferred_id, evidence_id, role.value),
+            (preferred_id, evidence_id, role),
         )
+        changed = True
+    return changed
 
 
 def _preferred_snapshot(row: sqlite3.Row | None) -> dict[str, object] | None:
@@ -964,6 +1067,7 @@ def _append_preferred_event(
     connection: sqlite3.Connection, event_type: str, preferred_id: int,
     content_identity_id: int, *, actor_type: str, actor: str, provenance: str,
     reason: str | None, previous: object, current: object,
+    details: Mapping[str, object] | None = None,
 ) -> None:
     connection.execute(
         "INSERT INTO organisation_events(event_uuid,event_type,preferred_date_id,"
@@ -971,7 +1075,8 @@ def _append_preferred_event(
         "VALUES(?,?,?,?,?,?,?,?,?)",
         (str(uuid.uuid4()), event_type, preferred_id, content_identity_id, actor_type,
          actor, provenance, reason,
-         json.dumps({"previous": previous, "new": current}, ensure_ascii=False, sort_keys=True)),
+         json.dumps({"previous": previous, "new": current, **(details or {})},
+                    ensure_ascii=False, sort_keys=True)),
     )
 
 
