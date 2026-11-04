@@ -133,7 +133,7 @@ class DesktopM30ServiceTests(DesktopM30Case):
     def test_preferred_year_cutover_and_unknown_status_pages(self) -> None:
         years = self.service.browse_years()
         counts = {row["year"]: row["content_count"] for row in years["years"]}
-        self.assertEqual(counts, {2020: 1, 2019: 1, None: 2})
+        self.assertEqual(counts, {2020: 1, 2019: 1, None: 3})
         self.assertIn("not a fallback", years["evidence_policy"])
         year_only = self.service.year_content(year=2019, limit=25, offset=0)
         self.assertEqual([row["content_identity_id"] for row in year_only["content"]],
@@ -142,9 +142,9 @@ class DesktopM30ServiceTests(DesktopM30Case):
         unknown = self.service.year_content(year=None, limit=25, offset=0)
         self.assertEqual(
             {row["content_identity_id"] for row in unknown["content"]},
-            set(self.content_ids[3:]),
+            set(self.content_ids[2:]),
         )
-        self.assertNotIn(self.content_ids[2], {
+        self.assertIn(self.content_ids[2], {
             row["content_identity_id"] for row in unknown["content"]
         })
         # The missing preferred row has a valid 1994 observed timestamp but no 1994 shelf.
@@ -185,7 +185,7 @@ class DesktopM30ServiceTests(DesktopM30Case):
         connection.commit()
         connection.close()
 
-        expected = [self.content_ids[3], self.content_ids[4], *added_ids]
+        expected = [self.content_ids[2], self.content_ids[3], self.content_ids[4], *added_ids]
         first = self.service.year_content(year=None, limit=2, offset=0)
         second = self.service.year_content(year=None, limit=2, offset=2)
         third = self.service.year_content(year=None, limit=2, offset=4)
@@ -195,14 +195,14 @@ class DesktopM30ServiceTests(DesktopM30Case):
         ]
         self.assertEqual(actual, expected)
         self.assertEqual(first["total_matching"], len(expected))
-        representative = first["content"][0]
+        representative = first["content"][1]
         self.assertEqual(representative["physical_instance_id"], chosen_instance_id)
         self.assertEqual(representative["current_observed_path"], r"C:\present-a.jpg")
         self.assertEqual(representative["physical_instance_count"], 3)
         self.assertEqual(sum(row["content_identity_id"] == self.content_ids[3]
                              for row in first["content"]), 1)
 
-    def test_unknown_page_can_be_empty_while_needs_review_remains_separate(self) -> None:
+    def test_unknown_shelf_retains_needs_review_when_other_unknowns_resolve(self) -> None:
         for index, content_id in enumerate(self.content_ids[3:]):
             set_owner_preferred_date(
                 database_path=self.database, content_identity_id=content_id,
@@ -210,8 +210,8 @@ class DesktopM30ServiceTests(DesktopM30Case):
                 action_id=f"resolve-unknown-{index}",
             )
         unknown = self.service.year_content(year=None, limit=25, offset=0)
-        self.assertEqual(unknown["total_matching"], 0)
-        self.assertEqual(unknown["content"], [])
+        self.assertEqual(unknown["total_matching"], 1)
+        self.assertEqual(unknown["content"][0]["content_identity_id"], self.content_ids[2])
         review = self.service.preferred_review_page(
             status="needs_review", limit=25, offset=0
         )
@@ -244,23 +244,23 @@ class DesktopM30ServiceTests(DesktopM30Case):
         self.assertNotIn("physical_instances", selects[0])
         self.assertNotIn("ORDER BY", selects[0].upper())
         self.assertNotIn("JOIN", selects[0].upper())
-        self.assertIn("status IN ('resolved','needs_review')", selects[0])
+        self.assertIn("status='resolved'", selects[0])
         self.assertIn("ORDER BY ci.content_identity_id", selects[1])
         self.assertIn("LIMIT 1 OFFSET 0", selects[1])
         self.assertIn("WITH page(content_identity_id,page_order) AS (VALUES", selects[2])
-        self.assertEqual(result["total_matching"], 602)
+        self.assertEqual(result["total_matching"], 603)
         self.assertEqual(len(result["content"]), 1)
 
     def test_year_and_unknown_counts_share_exact_projection_arithmetic(self) -> None:
         years = self.service.browse_years()
-        unknown = self.service.year_content(year=None, limit=2, offset=0)
+        unknown = self.service.year_content(year=None, limit=3, offset=0)
         year_counts = {row["year"]: row["content_count"] for row in years["years"]}
 
-        self.assertEqual(year_counts, {2020: 1, 2019: 1, None: 2})
+        self.assertEqual(year_counts, {2020: 1, 2019: 1, None: 3})
         self.assertEqual(year_counts[None], unknown["total_matching"])
         self.assertEqual(
             [row["content_identity_id"] for row in unknown["content"]],
-            self.content_ids[3:],
+            self.content_ids[2:],
         )
 
         connection = connect_existing_catalogue(self.database, read_only=True)
@@ -270,7 +270,7 @@ class DesktopM30ServiceTests(DesktopM30Case):
             FROM content_identities ci
             LEFT JOIN content_preferred_dates p
               ON p.content_identity_id=ci.content_identity_id
-            WHERE p.preferred_date_id IS NULL OR p.status='unknown'
+            WHERE p.preferred_date_id IS NULL OR p.status IN ('unknown','needs_review')
             """
         ).fetchone()[0])
         connection.close()
@@ -290,7 +290,7 @@ class DesktopM30ServiceTests(DesktopM30Case):
         ]
         self.assertEqual(len(selects), 1)
         self.assertNotIn("JOIN", selects[0].upper())
-        self.assertIn("status IN ('resolved','needs_review')", selects[0])
+        self.assertIn("status='resolved'", selects[0])
         self.assertEqual(preferred_years, years)
 
     def test_preferred_detail_owner_replacement_and_precision_rendering(self) -> None:
