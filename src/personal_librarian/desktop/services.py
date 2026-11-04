@@ -327,7 +327,7 @@ class DesktopDataService:
                     SELECT NULL,
                            (SELECT COUNT(*) FROM content_identities)
                            - (SELECT COUNT(*) FROM content_preferred_dates
-                              WHERE status IN ('resolved','needs_review')),
+                              WHERE status='resolved'),
                            0
                 )
                 ORDER BY browse_year IS NULL,browse_year DESC
@@ -439,7 +439,7 @@ class DesktopDataService:
     ) -> dict[str, Any]:
         """Return Unknown identities after bounding IDs, before display enrichment."""
 
-        unknown_clause = "(p.preferred_date_id IS NULL OR p.status='unknown')"
+        unknown_clause = "(p.preferred_date_id IS NULL OR p.status IN ('unknown','needs_review'))"
         unorganised = """
           AND NOT EXISTS (
               SELECT 1 FROM album_memberships am JOIN albums a ON a.album_id=am.album_id
@@ -464,14 +464,14 @@ class DesktopDataService:
                 ).fetchone()[0])
             else:
                 # Schema 10 permits one projection per identity and exactly three states.
-                # Missing projection plus explicit Unknown is therefore total identities
-                # minus the resolved and needs-review projections.  Counting the two
+                # Missing, Unknown and needs-review projections are total identities
+                # minus resolved projections.  Counting the two
                 # covering indexes avoids a point probe for every content identity.
                 total = int(connection.execute(
                     """
                     SELECT (SELECT COUNT(*) FROM content_identities)
                            - (SELECT COUNT(*) FROM content_preferred_dates
-                              WHERE status IN ('resolved','needs_review'))
+                              WHERE status='resolved')
                     """
                 ).fetchone()[0])
             page_ids = [
@@ -549,7 +549,7 @@ class DesktopDataService:
     ) -> dict[str, Any]:
         self._validate_year_page(year, limit, offset)
         year_clause = (
-            "(p.preferred_date_id IS NULL OR p.status='unknown')"
+            "(p.preferred_date_id IS NULL OR p.status IN ('unknown','needs_review'))"
             if year is None else "p.status='resolved' AND p.selected_year=?"
         )
         state_clause = "" if include_archived else "AND a.state='active'"
@@ -584,9 +584,9 @@ class DesktopDataService:
     @staticmethod
     def _validate_year_page(year: int | None, limit: int, offset: int) -> None:
         if year is not None and (
-            isinstance(year, bool) or not isinstance(year, int) or not 1900 <= year <= 2100
+            isinstance(year, bool) or not isinstance(year, int) or not 1 <= year <= 9999
         ):
-            raise CatalogueError("Browse year must be between 1900 and 2100, or Unknown Date.")
+            raise CatalogueError("Browse year must be between 1 and 9999, or Unknown Date.")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
             raise CatalogueError("Limit must be between 1 and 500.")
         if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
