@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 from personal_librarian.catalogue.database import connect_existing_catalogue, initialise_catalogue
@@ -22,6 +21,7 @@ from personal_librarian.pipeline.common import (
     MEDIA_EXTENSION_POLICY_VERSION,
     PipelineInterrupted,
     PipelineReport,
+    format_mtime_ns,
     get_or_create_batch,
     get_or_create_source,
     item_key,
@@ -190,7 +190,7 @@ def run_inventory(
                 instance_id = _existing_instance(
                     connection, source_id, relative, windows_absolute_text(path)
                 )
-                modified = datetime.fromtimestamp(state.st_mtime, timezone.utc).isoformat()
+                modified = format_mtime_ns(modified_ns)
                 if instance_id is None:
                     cursor = connection.execute(
                         """

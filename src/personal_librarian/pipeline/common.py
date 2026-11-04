@@ -6,6 +6,7 @@ import json
 import ntpath
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from personal_librarian.catalogue.errors import PipelineError
@@ -16,6 +17,13 @@ MEDIA_EXTENSION_POLICY_VERSION = "m9-media-extensions-v1"
 MEDIA_EXTENSIONS = frozenset(
     {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mpg", ".mkv", ".avi", ".3gp"}
 )
+
+
+def format_mtime_ns(value: int) -> str:
+    """Encode observed epoch nanoseconds as UTC without a float/microsecond round trip."""
+    seconds, fraction = divmod(value, 1_000_000_000)
+    instant = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=seconds)
+    return instant.strftime("%Y-%m-%dT%H:%M:%S") + f".{fraction:09d}+00:00"
 
 
 @dataclass(frozen=True, slots=True)
