@@ -125,6 +125,7 @@ def run_date_evidence_pipeline(
 
     if not isinstance(job_id, str) or not job_id.strip():
         raise PipelineError("Job ID must be explicit and non-empty.")
+    job_id = job_id.strip()
     checked_limit = _validated_limit(limit=limit, max_items=max_items)
     cursor = _validated_cursor(after_physical_instance_id)
     config = date_pipeline_config(
@@ -141,51 +142,37 @@ def run_date_evidence_pipeline(
     connection = connect_existing_catalogue(
         database_path, read_only=False, safety_policy=safety_policy
     )
+    job_started = False
     try:
         job = _start_or_resume_job(
             connection, job_id=job_id.strip(), fingerprint=fingerprint,
             config_json=config_json, policy_version=policy_version,
             compatible_configs=compatible_configs,
         )
-        candidates = connection.execute(
-            """
-            SELECT pi.physical_instance_id, pi.content_identity_id, pi.source_id,
-                   pi.raw_relative_path, pi.observed_created_at, pi.observed_modified_at
-            FROM physical_instances pi
-            WHERE pi.content_identity_id IS NOT NULL
-              AND pi.physical_instance_id > ?
-            ORDER BY pi.physical_instance_id LIMIT ?
-            """,
-            (cursor, checked_limit),
-        ).fetchall()
-        selected_count = len(candidates)
-        first_selected_id = (
-            None if not candidates else int(candidates[0]["physical_instance_id"])
+        candidates, selection = _load_selection(connection, job)
+        _validate_checkpoints(connection, job, candidates)
+        if job["status"] == "completed":
+            # A completed retry is a read of the original job, never a new scan.
+            return _report(connection, job_id, str(job["config_fingerprint"]), selection)
+        _validate_live_selection(connection, candidates)
+        connection.execute(
+            "UPDATE date_evidence_jobs SET status='running',completed_at=NULL WHERE job_id=?",
+            (job_id,),
         )
-        last_selected_id = (
-            None if not candidates else int(candidates[-1]["physical_instance_id"])
-        )
-        has_more = False if last_selected_id is None else connection.execute(
-            "SELECT 1 FROM physical_instances WHERE content_identity_id IS NOT NULL "
-            "AND physical_instance_id > ? LIMIT 1", (last_selected_id,),
-        ).fetchone() is not None
-        selection = {
-            "requested_after_physical_instance_id": cursor,
-            "requested_limit": checked_limit,
-            "selection_order": "physical_instance_id ASC",
-            "selected_count": selected_count,
-            "first_selected_physical_instance_id": first_selected_id,
-            "last_selected_physical_instance_id": last_selected_id,
-            "next_cursor": last_selected_id,
-            "end_of_catalogue": not has_more,
-        }
+        connection.commit()
+        job_started = True
         processed_this_call = 0
         for row in candidates:
+            # Recheck under a write reservation: no concurrent catalogue change can
+            # substitute identity/source fields between this check and checkpoint.
+            connection.execute("BEGIN IMMEDIATE")
+            _validate_live_selection(connection, [row])
             item_key = f"physical:{int(row['physical_instance_id'])}"
             if connection.execute(
                 "SELECT 1 FROM date_evidence_job_items WHERE job_id=? AND item_key=?",
                 (job_id, item_key),
             ).fetchone() is not None:
+                connection.rollback()
                 continue
             try:
                 payload, outcome, evidence_count = _process_item(
@@ -236,6 +223,15 @@ def run_date_evidence_pipeline(
                 raise PipelineInterrupted(
                     f"Date evidence job {job_id!r} interrupted after checkpoint."
                 )
+        connection.execute("BEGIN IMMEDIATE")
+        current_job = connection.execute(
+            "SELECT * FROM date_evidence_jobs WHERE job_id=?", (job_id,)
+        ).fetchone()
+        _validate_checkpoints(connection, current_job, candidates)
+        if current_job["status"] == "completed":
+            # Another worker may have completed this same selection meanwhile.
+            return _report(connection, job_id, str(job["config_fingerprint"]), selection)
+        _validate_live_selection(connection, candidates)
         connection.execute(
             "UPDATE date_evidence_jobs SET status='completed',updated_at="
             "strftime('%Y-%m-%dT%H:%M:%fZ','now'),completed_at="
@@ -246,6 +242,7 @@ def run_date_evidence_pipeline(
             "WHERE analysis_run_id=?", (job["analysis_run_id"],),
         )
         connection.commit()
+        job_started = False  # Reporting failure cannot undo durable completion.
         return _report(
             connection, job_id, str(job["config_fingerprint"]), selection
         )
@@ -254,12 +251,13 @@ def run_date_evidence_pipeline(
     except (DateEvidenceError, sqlite3.Error) as exc:
         connection.rollback()
         try:
-            connection.execute(
-                "UPDATE date_evidence_jobs SET status='failed',updated_at="
-                "strftime('%Y-%m-%dT%H:%M:%fZ','now'),completed_at="
-                "strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE job_id=?", (job_id,),
-            )
-            connection.commit()
+            if job_started:
+                connection.execute(
+                    "UPDATE date_evidence_jobs SET status='failed',updated_at="
+                    "strftime('%Y-%m-%dT%H:%M:%fZ','now'),completed_at="
+                    "strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE job_id=?", (job_id,),
+                )
+                connection.commit()
         except sqlite3.Error:
             connection.rollback()
         raise PipelineError(f"Date evidence pipeline failed safely: {exc}") from exc
@@ -267,11 +265,122 @@ def run_date_evidence_pipeline(
         connection.close()
 
 
+SELECTION_VERSION = "date-job-selection-v1"
+SELECTION_FIELDS = (
+    "physical_instance_id", "content_identity_id", "source_id", "raw_relative_path",
+    "observed_created_at", "observed_modified_at",
+)
+
+
+def _selection_report(candidates: list[dict[str, Any]], config: dict[str, Any],
+                      *, end_of_catalogue: bool) -> dict[str, Any]:
+    first = candidates[0]["physical_instance_id"] if candidates else None
+    last = candidates[-1]["physical_instance_id"] if candidates else None
+    return {
+        "requested_after_physical_instance_id": config.get("after_physical_instance_id", 0),
+        "requested_limit": config.get("limit", config.get("max_items")),
+        "selection_order": "physical_instance_id ASC", "selected_count": len(candidates),
+        "first_selected_physical_instance_id": first,
+        "last_selected_physical_instance_id": last, "next_cursor": last,
+        "end_of_catalogue": end_of_catalogue,
+    }
+
+
+def _capture_selection(connection: sqlite3.Connection, config: dict[str, Any]) -> dict[str, Any]:
+    # Called inside the SAME transaction as analysis-run and job creation.
+    candidates = [dict(row) for row in connection.execute(
+        "SELECT " + ",".join(SELECTION_FIELDS) + " FROM physical_instances "
+        "WHERE content_identity_id IS NOT NULL AND physical_instance_id>? "
+        "ORDER BY physical_instance_id LIMIT ?",
+        (config["after_physical_instance_id"], config["limit"]),
+    )]
+    last = candidates[-1]["physical_instance_id"] if candidates else None
+    has_more = last is not None and connection.execute(
+        "SELECT 1 FROM physical_instances WHERE content_identity_id IS NOT NULL "
+        "AND physical_instance_id>? LIMIT 1", (last,),
+    ).fetchone() is not None
+    return {"version": SELECTION_VERSION, "request": config, "members": candidates,
+            "report": _selection_report(candidates, config, end_of_catalogue=not has_more)}
+
+
+def _load_selection(connection: sqlite3.Connection, job: sqlite3.Row
+                    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    run = connection.execute("SELECT * FROM analysis_runs WHERE analysis_run_id=?",
+                             (job["analysis_run_id"],)).fetchone()
+    try:
+        parameters = json.loads(run["parameters_json"])
+        if "selection" not in parameters:
+            raise PipelineError(
+                "Historical job has no provable original selection snapshot; "
+                "preserve it and use a separately authorised new job ID."
+            )
+        selection = parameters["selection"]
+        request = json.loads(job["config_json"])
+        members, report = selection["members"], selection["report"]
+        if (run["run_key"] != "date-evidence-job:" + hashlib.sha256(job["job_id"].encode("utf-8")).hexdigest()
+                or run["analysis_kind"] != "date_evidence" or run["algorithm"] != "catalogue-fields"
+                or run["algorithm_version"] != job["pipeline_version"]
+                or selection["version"] != SELECTION_VERSION
+                or selection["request"] != request
+                or parameters != request | {"selection": selection,
+                                           "selection_fingerprint": parameters["selection_fingerprint"]}
+                or fingerprint_config(request)[0] != job["config_fingerprint"]
+                or fingerprint_config(selection)[0] != parameters["selection_fingerprint"]
+                or not isinstance(members, list)
+                or not isinstance(report["end_of_catalogue"], bool)):
+            raise ValueError("selection binding")
+        ids = []
+        for member in members:
+            if set(member) != set(SELECTION_FIELDS):
+                raise ValueError("selection fields")
+            for field in SELECTION_FIELDS[:3]:
+                if type(member[field]) is not int or not 1 <= member[field] <= MAX_PHYSICAL_INSTANCE_ID:
+                    raise ValueError("selection identity")
+            if not isinstance(member["raw_relative_path"], str) or any(
+                    member[field] is not None and not isinstance(member[field], str)
+                    for field in SELECTION_FIELDS[4:]):
+                raise ValueError("selection source metadata")
+            ids.append(member["physical_instance_id"])
+        if (ids != sorted(set(ids)) or any(i <= report["requested_after_physical_instance_id"] for i in ids)
+                or len(ids) > report["requested_limit"]
+                or report != _selection_report(members, request, end_of_catalogue=report["end_of_catalogue"])
+                or (not ids and not report["end_of_catalogue"])):
+            raise ValueError("selection bounds")
+        if job["status"] == "completed" and (not job["completed_at"] or not run["completed_at"]):
+            raise ValueError("completion markers")
+    except (TypeError, ValueError, KeyError) as exc:
+        raise PipelineError("Invalid durable date-job selection; offline review required.") from exc
+    return members, report | {"selection_fingerprint": parameters["selection_fingerprint"]}
+
+
+def _validate_checkpoints(connection: sqlite3.Connection, job: sqlite3.Row,
+                          candidates: list[dict[str, Any]]) -> None:
+    expected = {f"physical:{m['physical_instance_id']}": m for m in candidates}
+    checkpoints = connection.execute("SELECT * FROM date_evidence_job_items WHERE job_id=?",
+                                     (job["job_id"],)).fetchall()
+    for item in checkpoints:
+        member = expected.get(item["item_key"])
+        if member is None or any(item[field] != member[field] for field in SELECTION_FIELDS[:2]):
+            raise PipelineError("Checkpoint does not match durable date-job selection.")
+    if job["status"] == "completed" and len(checkpoints) != len(expected):
+        raise PipelineError("Completed date-job selection has incomplete checkpoints.")
+
+
+def _validate_live_selection(connection: sqlite3.Connection, candidates: list[dict[str, Any]]) -> None:
+    for member in candidates:
+        live = connection.execute("SELECT " + ",".join(SELECTION_FIELDS) +
+                                  " FROM physical_instances WHERE physical_instance_id=?",
+                                  (member["physical_instance_id"],)).fetchone()
+        if live is None or dict(live) != member:
+            raise PipelineError("Original date-job selection inputs changed; offline review required.")
+
+
 def _start_or_resume_job(
     connection: sqlite3.Connection, *, job_id: str, fingerprint: str,
     config_json: str, policy_version: str,
     compatible_configs: tuple[tuple[str, str], ...] = (),
 ) -> sqlite3.Row:
+    connection.execute("BEGIN IMMEDIATE")
     row = connection.execute(
         "SELECT * FROM date_evidence_jobs WHERE job_id=?", (job_id,)
     ).fetchone()
@@ -284,20 +393,18 @@ def _start_or_resume_job(
             DATE_EVIDENCE_PIPELINE_VERSION, "preferred-date-policy", policy_version,
         ) or (row["config_fingerprint"], row["config_json"]) not in accepted_configs:
             raise PipelineError(f"Job ID {job_id!r} has different date pipeline configuration.")
-        connection.execute(
-            "UPDATE date_evidence_jobs SET status='running',completed_at=NULL,updated_at="
-            "strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE job_id=?", (job_id,),
-        )
-        connection.commit()
-        return connection.execute(
-            "SELECT * FROM date_evidence_jobs WHERE job_id=?", (job_id,)
-        ).fetchone()
+        # Validate retained selection/checkpoints before touching any job state.
+        return row
+    config = json.loads(config_json)
+    selection = _capture_selection(connection, config)
+    parameters = config | {"selection": selection,
+                           "selection_fingerprint": fingerprint_config(selection)[0]}
     run_key = "date-evidence-job:" + hashlib.sha256(job_id.encode("utf-8")).hexdigest()
     cursor = connection.execute(
         "INSERT INTO analysis_runs(run_key,analysis_kind,algorithm,algorithm_version,"
         "parameters_json,started_at) VALUES(?, 'date_evidence', 'catalogue-fields', ?, ?, "
         "strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
-        (run_key, DATE_EVIDENCE_PIPELINE_VERSION, config_json),
+        (run_key, DATE_EVIDENCE_PIPELINE_VERSION, json.dumps(parameters, sort_keys=True)),
     )
     analysis_run_id = int(cursor.lastrowid)
     connection.execute(
@@ -306,7 +413,9 @@ def _start_or_resume_job(
         (job_id, DATE_EVIDENCE_PIPELINE_VERSION, "preferred-date-policy", policy_version,
          fingerprint, config_json, analysis_run_id),
     )
+    # Selection and job exist together, or neither exists; no partial snapshot.
     connection.commit()
+    connection.execute("BEGIN IMMEDIATE")
     return connection.execute(
         "SELECT * FROM date_evidence_jobs WHERE job_id=?", (job_id,)
     ).fetchone()

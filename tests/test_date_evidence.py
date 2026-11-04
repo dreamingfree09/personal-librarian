@@ -515,7 +515,7 @@ class PipelineAndCliTests(DateServiceCase):
         self.assertEqual(result["metrics"]["requested_limit"], 1)
         self.assertEqual(result["metrics"]["first_selected_physical_instance_id"], 4)
 
-    def test_existing_legacy_first_page_job_definition_remains_resumable(self) -> None:
+    def test_existing_legacy_job_without_selection_requires_new_job_id(self) -> None:
         self.add_explicit_instance(4, self.content_ids[0], "ordinary.jpg")
         legacy_config = {
             "pipeline_version": "m30c-v1",
@@ -543,13 +543,22 @@ class PipelineAndCliTests(DateServiceCase):
             connection.commit()
         finally:
             connection.close()
-        report = run_date_evidence_pipeline(
-            database_path=self.database, job_id="legacy-first-page", limit=1,
-            after_physical_instance_id=0,
-        )
-        self.assertEqual(self.job_physical_ids("legacy-first-page"), [4])
-        self.assertEqual(report.metrics["config_fingerprint"], legacy_fingerprint)
-        self.assertEqual(report.metrics["requested_after_physical_instance_id"], 0)
+        # A historical completed flag with no retained selection/checkpoints cannot
+        # authorise processing today's first page. Preserve, do not fabricate it.
+        with self.assertRaisesRegex(PipelineError, "no provable original selection"):
+            run_date_evidence_pipeline(
+                database_path=self.database, job_id="legacy-first-page", limit=1,
+                after_physical_instance_id=0,
+            )
+        self.assertEqual(self.job_physical_ids("legacy-first-page"), [])
+        connection = connect_existing_catalogue(self.database, read_only=True)
+        try:
+            job = connection.execute("SELECT * FROM date_evidence_jobs WHERE job_id='legacy-first-page'").fetchone()
+            self.assertEqual(job["status"], "completed")
+            self.assertEqual(job["config_fingerprint"], legacy_fingerprint)
+            self.assertEqual(job["config_json"], legacy_json)
+        finally:
+            connection.close()
 
     def test_single_item_failure_is_checkpointed_and_next_item_continues(self) -> None:
         import personal_librarian.pipeline.date_evidence as pipeline_module
