@@ -61,6 +61,28 @@ runtime assets need a reviewed rule and origin check; naming a file like an asse
 is insufficient. Selected virtual-environment and base-Python roots are supported.
 The installed dependency metadata and reviewed builder remain trusted inputs.
 
+### C1 pinned-runtime collection compatibility
+
+A fresh Windows build of accepted source `d3f7896` with Python 3.13.17,
+PyInstaller 6.22.2, NumPy 2.5.4, Pillow 13.0.0, Qt 6.11.2 and setuptools
+80.9.0 failed closed on nine additional collected dependency resources. The
+contract now admits only NumPy's empty `REQUESTED` installation marker and the
+explicit setuptools-vendored importlib_metadata 8.0.0 metadata/license files and
+`jaraco/text/Lorem ipsum.txt` runtime resource. These are dependency assets,
+not application or owner documents.
+
+The marker must be empty and hash-bound to its installed RECORD. All vendored
+resources must be located and SHA-256-bound by the outer **setuptools 80.9.0**
+wheel RECORD; its nested RECORD gets no self-hash exemption. A different
+setuptools version, missing hash, changed bytes, different source path or
+unlisted neighboring resource fails closed. Arbitrary text, private data and
+new resources remain forbidden. This is not a general text-file exception.
+
+The failed original build must be retained. A corrected candidate requires a
+fresh clean checkout/output context and separate package acceptance. Neither
+the correction nor successful collection changes `NOT_PERFORMED` into release
+approval, and neither establishes closure of unavailable original G3/G4 criteria.
+
 ## Interrupted release-set publication
 
 The archive, manifest and checksum are create-only. A hash-bound
