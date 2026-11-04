@@ -325,6 +325,16 @@ class ReleasePackagingTests(unittest.TestCase):
                 with self.subTest(name=variant), self.assertRaises(ValueError):
                     C.require_resource_name(variant)
 
+    def test_resealed_nonempty_requested_contract_fails_closed(self):
+        source = self.inputs/'payload'; source.write_bytes(b'not an empty marker')
+        forged = json.loads(json.dumps(self.contract))
+        forged['files']['_internal/numpy-2.5.4.dist-info/REQUESTED'] = C.file_record(source)
+        forged['fingerprint'] = C.seal({k:v for k,v in forged.items() if k != 'fingerprint'})
+        with self.assertRaisesRegex(ValueError, 'must describe empty bytes'):
+            C.validate_contract(forged)
+        with self.assertRaises(ValueError):
+            BUILD_RELEASE.create_archive(self.dist, forged, self.archive)
+
     def test_vendored_resource_round_trip_retains_unaccepted_receipt(self):
         name = '_internal/setuptools/_vendor/importlib_metadata-8.0.0.dist-info/RECORD'
         source, record, dist = self.resource_record(name, b'synthetic nested record')

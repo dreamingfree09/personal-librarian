@@ -203,11 +203,13 @@ def validate_contract(contract: dict) -> dict:
     folded=set()
     for name, record in files.items():
         relative_name(name)
-        require_resource_name(name)
+        rule = require_resource_name(name)
         if name.casefold() in folded: raise ValueError('Case-colliding artifact paths.')
         folded.add(name.casefold())
         if set(record)!={'size','sha256'} or type(record['size']) is not int or record['size']<0 or len(record['sha256'])!=64 or any(c not in '0123456789abcdef' for c in record['sha256']):
             raise ValueError('Invalid artifact identity.')
+        if rule == 'empty-installer-marker' and record != {'size':0, 'sha256':hashlib.sha256(b'').hexdigest()}:
+            raise ValueError('Installer REQUESTED contract must describe empty bytes.')
     provenance=contract['provenance']
     if provenance.get('validation') != 'NOT_PERFORMED': raise ValueError('Build cannot claim package validation.')
     return files
