@@ -50,7 +50,7 @@ jobs:
           exit $testExit
       - name: Preserve diagnostic evidence even on failure
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: lifecycle-python-${{ matrix.python }}-qualified-qt
           path: tmp/ci-finalisation/
