@@ -55,7 +55,7 @@ jobs:
 
       - name: Preserve process-exit evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-test-process
           path: tmp/ci-finalisation/
