@@ -258,6 +258,95 @@ class ReleasePackagingTests(unittest.TestCase):
         self.dist.rename(distribution);self.dist=distribution
         return repository,repository/'release'
 
+    def resource_record(self, name, data, *, package='setuptools', version='80.9.0'):
+        import base64, hashlib
+        from types import SimpleNamespace
+        source = self.inputs / name.removeprefix('_internal/')
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(data)
+        class Record:
+            hash = SimpleNamespace(mode='sha256', value=base64.urlsafe_b64encode(
+                hashlib.sha256(data).digest()).decode().rstrip('='))
+            def __str__(self): return name.split('/', 1)[1]
+        record = Record()
+        distribution = SimpleNamespace(metadata={'Name':package}, version=version,
+                                       files=[record], locate_file=lambda item:source)
+        return source, record, distribution
+
+    def test_pinned_vendored_resources_require_outer_wheel_hash(self):
+        for name in sorted(C.SETUPTOOLS_RESOURCES):
+            with self.subTest(name=name):
+                source, record, dist = self.resource_record(name, b'synthetic wheel resource')
+                records = [(dist, dist.files)]
+                C.verify_resource_origin(name.swapcase(), source, workpath=None, records=records)
+                source.write_bytes(b'tampered')
+                with self.assertRaises(ValueError):
+                    C.verify_resource_origin(name, source, workpath=None, records=records)
+                source.write_bytes(b'synthetic wheel resource')
+                record.hash = None
+                # A nested RECORD does not inherit the top-level self-hash exemption.
+                with self.assertRaises(ValueError):
+                    C.verify_resource_origin(name, source, workpath=None, records=records)
+
+    def test_vendored_resource_rejects_wrong_distribution_version_and_origin(self):
+        name = '_internal/setuptools/_vendor/jaraco/text/Lorem ipsum.txt'
+        source, record, dist = self.resource_record(name, b'synthetic')
+        other = self.inputs/'other.txt'; other.write_bytes(source.read_bytes())
+        for package, version, candidate in [('other', '80.9.0', source),
+                                             ('setuptools', '81.0.0', source),
+                                             ('setuptools', '80.9.0', other)]:
+            with self.subTest(package=package, version=version, candidate=candidate):
+                dist.metadata['Name']=package; dist.version=version
+                with self.assertRaises(ValueError):
+                    C.verify_resource_origin(name, candidate, workpath=None, records=[(dist,[record])])
+
+    def test_numpy_requested_is_empty_and_record_bound(self):
+        name = '_internal/numpy-2.5.4.dist-info/REQUESTED'
+        source, record, dist = self.resource_record(name, b'', package='numpy', version='2.5.4')
+        C.verify_resource_origin(name, source, workpath=None, records=[(dist,[record])])
+        with self.assertRaises(ValueError):
+            C.verify_resource_origin(name, source, workpath=None, records=[])
+        source, record, dist = self.resource_record(name, b'private payload', package='numpy', version='2.5.4')
+        with self.assertRaisesRegex(ValueError, 'must be empty'):
+            C.verify_resource_origin(name, source, workpath=None, records=[(dist,[record])])
+        source, record, dist = self.resource_record(name, b'', package='numpy', version='2.5.4')
+        record.hash = None
+        with self.assertRaises(ValueError):
+            C.verify_resource_origin(name, source, workpath=None, records=[(dist,[record])])
+
+    def test_runtime_correction_does_not_admit_adjacent_private_or_unknown_data(self):
+        for name in ('_internal/setuptools/_vendor/jaraco/text/private.txt',
+                     '_internal/setuptools/_vendor/jaraco/text/Lorem ipsum.txt.bak',
+                     '_internal/setuptools/_vendor/importlib_metadata-9.0.0.dist-info/METADATA',
+                     '_internal/setuptools/_vendor/importlib_metadata-8.0.0.dist-info/direct_url.json',
+                     '_internal/numpy-2.5.4.dist-info/private.txt',
+                     '_internal/unknown-1.0.dist-info/REQUESTED'):
+            for variant in (name,name.upper()):
+                with self.subTest(name=variant), self.assertRaises(ValueError):
+                    C.require_resource_name(variant)
+
+    def test_resealed_nonempty_requested_contract_fails_closed(self):
+        source = self.inputs/'payload'; source.write_bytes(b'not an empty marker')
+        forged = json.loads(json.dumps(self.contract))
+        forged['files']['_internal/numpy-2.5.4.dist-info/REQUESTED'] = C.file_record(source)
+        forged['fingerprint'] = C.seal({k:v for k,v in forged.items() if k != 'fingerprint'})
+        with self.assertRaisesRegex(ValueError, 'must describe empty bytes'):
+            C.validate_contract(forged)
+        with self.assertRaises(ValueError):
+            BUILD_RELEASE.create_archive(self.dist, forged, self.archive)
+
+    def test_vendored_resource_round_trip_retains_unaccepted_receipt(self):
+        name = '_internal/setuptools/_vendor/importlib_metadata-8.0.0.dist-info/RECORD'
+        source, record, dist = self.resource_record(name, b'synthetic nested record')
+        target = self.dist/name; target.parent.mkdir(parents=True); target.write_bytes(source.read_bytes())
+        with patch.object(C.importlib.metadata, 'distributions', return_value=[dist]):
+            contract = C.contract_from_inputs(self.dist, {**self.expected,name:source}, {'validation':'NOT_PERFORMED'})
+        BUILD_RELEASE.create_archive(self.dist, contract, self.archive)
+        BUILD_RELEASE.verify_archive(self.archive, contract)
+        self.assertEqual(contract['provenance']['validation'], 'NOT_PERFORMED')
+        target.write_bytes(b'changed after collection')
+        with self.assertRaises(ValueError): C.distribution_files(self.dist, contract)
+
     def test_incomplete_release_set_never_validates(self):
         repository,output=self.prepare_release()
         for suffix in ('.manifest.json','.sha256','.build-complete.json'):

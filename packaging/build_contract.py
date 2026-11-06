@@ -19,6 +19,12 @@ SCHEMA = 'controlled-pyinstaller-v1'
 # These exceptions correspond to the reviewed spec's actual runtime requirements.
 FORBIDDEN_COMPONENTS = {'backup', 'backups', 'catalogue', 'inventories', 'logs',
                         'credentials', 'secrets', '.ssh', '.aws'}
+# Observed in the pinned setuptools 80.9.0 wheel's collected runtime graph.
+# Every byte, including the nested RECORD, must match the outer wheel RECORD.
+SETUPTOOLS_RESOURCES = {
+    '_internal/setuptools/_vendor/importlib_metadata-8.0.0.dist-info/' + name
+    for name in ('installer', 'license', 'metadata', 'record', 'requested', 'wheel', 'top_level.txt')
+} | {'_internal/setuptools/_vendor/jaraco/text/lorem ipsum.txt'}
 
 
 def require_resource_name(name: str) -> str:
@@ -33,6 +39,10 @@ def require_resource_name(name: str) -> str:
         return 'runtime-binary'
     if lowered == '_internal/base_library.zip':
         return 'python-base-library'
+    if re.fullmatch(r'_internal/numpy-[^/]+\.dist-info/requested', lowered):
+        return 'empty-installer-marker'
+    if lowered in SETUPTOOLS_RESOURCES:
+        return 'setuptools-vendored-resource'
     if re.fullmatch(r'_internal/pyside6/translations/(?:qt|qtbase)(?:_[a-z0-9]+)+\.qm', lowered):
         return 'qt-translation'
     if re.fullmatch(r'_internal/(numpy|pillow|pyside6|pyside6_addons|pyside6_essentials|shiboken6)-[^/]+\.dist-info/licenses/(?:[^/]+/)*(?:[a-z0-9_-]+_)?(?:license|copying)(?:\.(?:txt|md|rst))?', lowered):
@@ -52,6 +62,8 @@ def verify_resource_origin(name: str, source: Path, *, workpath: Path | None, re
     if rule in {'application-executable', 'runtime-binary'}:
         return
     source = safe_path(source)
+    if rule == 'empty-installer-marker' and file_record(source)['size'] != 0:
+        raise ValueError('Installer REQUESTED marker must be empty.')
     if rule == 'python-base-library':
         if workpath is None or source != safe_path(workpath / 'base_library.zip'):
             raise ValueError('Base library must be the controlled generated input.')
@@ -70,6 +82,11 @@ def verify_resource_origin(name: str, source: Path, *, workpath: Path | None, re
     if records is None:
         records = [(dist, tuple(dist.files or ())) for dist in importlib.metadata.distributions()]
     for distribution, items in records:
+        if rule == 'setuptools-vendored-resource' and (
+            distribution.metadata['Name'].casefold() != 'setuptools'
+            or distribution.version != '80.9.0'
+        ):
+            continue
         for item in items:
             if str(item).replace('\\', '/').casefold() != expected.casefold():
                 continue
@@ -186,11 +203,13 @@ def validate_contract(contract: dict) -> dict:
     folded=set()
     for name, record in files.items():
         relative_name(name)
-        require_resource_name(name)
+        rule = require_resource_name(name)
         if name.casefold() in folded: raise ValueError('Case-colliding artifact paths.')
         folded.add(name.casefold())
         if set(record)!={'size','sha256'} or type(record['size']) is not int or record['size']<0 or len(record['sha256'])!=64 or any(c not in '0123456789abcdef' for c in record['sha256']):
             raise ValueError('Invalid artifact identity.')
+        if rule == 'empty-installer-marker' and record != {'size':0, 'sha256':hashlib.sha256(b'').hexdigest()}:
+            raise ValueError('Installer REQUESTED contract must describe empty bytes.')
     provenance=contract['provenance']
     if provenance.get('validation') != 'NOT_PERFORMED': raise ValueError('Build cannot claim package validation.')
     return files
@@ -225,7 +244,8 @@ def contract_from_inputs(distribution: Path, inputs: dict[str,Path], provenance:
     records = None
     for name, source in inputs.items():
         rule = require_resource_name(name)
-        if rule in {'qt-translation', 'dependency-license', 'dependency-metadata'} and records is None:
+        if rule in {'qt-translation', 'dependency-license', 'dependency-metadata',
+                    'empty-installer-marker', 'setuptools-vendored-resource'} and records is None:
             # Snapshot RECORD metadata once per build; every resource still gets
             # its own source-path and current-byte verification. No global cache.
             records = [(dist, tuple(dist.files or ())) for dist in importlib.metadata.distributions()]
