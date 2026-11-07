@@ -13,7 +13,7 @@ dependencies = [
     "numpy>=2.1,<3",
     # This suite reproduces native Windows finalisation crashes with 6.12.0;
     # see docs/CI_FINALISATION_DIAGNOSTIC.md before changing this qualification.
-    "PySide6==6.11.2",
+    "PySide6==6.12.0",
 ]
 
 [project.optional-dependencies]
