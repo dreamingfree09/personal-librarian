@@ -1,0 +1,138 @@
+[
+  {
+    "label": "A primary text",
+    "foreground": "#203C3A",
+    "background": "#FFFFFF",
+    "ratio": 11.87,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "A body secondary",
+    "foreground": "#5D6F6C",
+    "background": "#FFFFFF",
+    "ratio": 5.31,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "A secondary on canvas",
+    "foreground": "#5D6F6C",
+    "background": "#F5F6F3",
+    "ratio": 4.89,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "A selection text",
+    "foreground": "#126557",
+    "background": "#E4F2EB",
+    "ratio": 6.02,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "A primary button",
+    "foreground": "#FFFFFF",
+    "background": "#126557",
+    "ratio": 6.94,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "A warning",
+    "foreground": "#87500B",
+    "background": "#FFF0D8",
+    "ratio": 5.88,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "A focus",
+    "foreground": "#2456A6",
+    "background": "#FFFFFF",
+    "ratio": 7.1,
+    "target": 3,
+    "result": "PASS"
+  },
+  {
+    "label": "B primary text",
+    "foreground": "#F0F4FD",
+    "background": "#202938",
+    "ratio": 13.28,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "B secondary",
+    "foreground": "#B4C1D3",
+    "background": "#202938",
+    "ratio": 8.02,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "B selection",
+    "foreground": "#8DB8FF",
+    "background": "#273D5B",
+    "ratio": 5.48,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "B warning",
+    "foreground": "#FFD68E",
+    "background": "#483C29",
+    "ratio": 7.81,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "B button",
+    "foreground": "#142137",
+    "background": "#8DB8FF",
+    "ratio": 8.01,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "B focus",
+    "foreground": "#8DB8FF",
+    "background": "#202938",
+    "ratio": 7.27,
+    "target": 3,
+    "result": "PASS"
+  },
+  {
+    "label": "A optional dark primary",
+    "foreground": "#ECF2E9",
+    "background": "#22332E",
+    "ratio": 11.67,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "A optional dark secondary",
+    "foreground": "#BDC9C0",
+    "background": "#22332E",
+    "ratio": 7.77,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "B optional light primary",
+    "foreground": "#1F2D45",
+    "background": "#FFFFFF",
+    "ratio": 13.82,
+    "target": 4.5,
+    "result": "PASS"
+  },
+  {
+    "label": "B optional light secondary",
+    "foreground": "#52627D",
+    "background": "#FFFFFF",
+    "ratio": 6.17,
+    "target": 4.5,
+    "result": "PASS"
+  }
+]
