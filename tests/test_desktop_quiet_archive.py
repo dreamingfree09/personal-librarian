@@ -176,6 +176,14 @@ class QuietArchiveTests(DesktopM30Case):
         self.assertEqual(page.content_detail.textFormat(),Qt.PlainText)
         self.assertTrue(page.content_detail.wordWrap())
         self.assertEqual(page.content_detail.text(),value)
+        for _ in range(5):
+            self.application.processEvents()
+        self.assertGreaterEqual(page.content_detail.height(),
+                                page.content_detail.heightForWidth(page.content_detail.width()))
+        scroll=page.content_detail_scroll.verticalScrollBar()
+        self.assertGreater(scroll.maximum(),0)
+        scroll.setValue(scroll.maximum())
+        self.assertEqual(scroll.value(),scroll.maximum())
 
     def test_control_rows_remain_horizontally_reachable_at_three_sizes(self):
         page=self.page()
