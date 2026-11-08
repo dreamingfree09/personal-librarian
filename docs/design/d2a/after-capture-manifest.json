@@ -1,0 +1,122 @@
+{
+  "label": "after",
+  "source_commit": "6cfc86dd8bf6e9e2f181460b640c391875f7ca9b",
+  "source_files": {
+    "main_window.py": "72817d87475f51c000ec30fb657b4ad07b739ea10458f62d548ecacd41becbe8",
+    "library_page.py": "5dc59e81e4ecb0ca3530652d24188ca29967dfdfc94c94b17bf56cf7cfa3078a",
+    "quiet_archive.py": "04c046f5619920d6524e73f8e3d4904bbcd98d8e76034d23c293a13a6964d705"
+  },
+  "python": "3.13.1",
+  "qt": "6.11.2",
+  "platform": "offscreen",
+  "pid": 141116,
+  "native_display_scaling": "UNVERIFIED",
+  "catalogue_unchanged": true,
+  "source_data": "generated disposable images only",
+  "captures": [
+    {
+      "file": "after-overview-1280.png",
+      "viewport": [
+        1280,
+        840
+      ],
+      "rendered": [
+        1280,
+        882
+      ],
+      "sha256": "4ff9f6fd1537c917016752ef294310da70dec66c8bfd048a2f273de959ed8bf0",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    },
+    {
+      "file": "after-library-years-1280.png",
+      "viewport": [
+        1280,
+        840
+      ],
+      "rendered": [
+        1280,
+        882
+      ],
+      "sha256": "3c397725fd6ffa2e35d87a8ad9e3d7f3ce39bd20149f28f7703fc489897386f0",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    },
+    {
+      "file": "after-overview-1040.png",
+      "viewport": [
+        1040,
+        840
+      ],
+      "rendered": [
+        1040,
+        882
+      ],
+      "sha256": "bde21feea0c91dafc1361a4edb1ba6309f88921162dd70b14bdc228df058cfd2",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    },
+    {
+      "file": "after-library-years-1040.png",
+      "viewport": [
+        1040,
+        840
+      ],
+      "rendered": [
+        1040,
+        882
+      ],
+      "sha256": "909779154ed161cbd8cb5cc1afd6eb09ba1aad599901115f61307ba0c488a885",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    },
+    {
+      "file": "after-overview-1920.png",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "rendered": [
+        1920,
+        1122
+      ],
+      "sha256": "235f4dc55f0df71a782813adebe6ead452e9cb9cb9d0435e0b1c1e0e470d17f6",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    },
+    {
+      "file": "after-library-years-1920.png",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "rendered": [
+        1920,
+        1122
+      ],
+      "sha256": "c451d8254527670922a1ba376ddd6925fe12421d8502b458248fde844b4e1041",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    },
+    {
+      "file": "after-collections-1280.png",
+      "viewport": [
+        1280,
+        840
+      ],
+      "rendered": [
+        1280,
+        882
+      ],
+      "sha256": "26a7ca6b4bece4aec0992150ab848b856750726c23218a81267343332811b18e",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    },
+    {
+      "file": "after-selected-content-1280.png",
+      "viewport": [
+        1280,
+        840
+      ],
+      "rendered": [
+        1280,
+        882
+      ],
+      "sha256": "652a435885eb4550e7d774141a6c37d6387d38c5b4b0a0aa30cc104ef8bd0a94",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    }
+  ]
+}
