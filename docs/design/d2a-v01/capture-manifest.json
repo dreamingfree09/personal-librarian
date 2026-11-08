@@ -1,0 +1,138 @@
+{
+  "label": "after",
+  "source_commit": "12fac6f2e2ade0e36f6cf2497cb39210df623d7c",
+  "source_files": {
+    "main_window.py": "72817d87475f51c000ec30fb657b4ad07b739ea10458f62d548ecacd41becbe8",
+    "library_page.py": "33b79e0c950489b7499ecec69a5784ea02497ef16619eb55d3acd29121f4b452",
+    "quiet_archive.py": "04c046f5619920d6524e73f8e3d4904bbcd98d8e76034d23c293a13a6964d705"
+  },
+  "python": "3.13.1",
+  "qt": "6.11.2",
+  "platform": "offscreen",
+  "pid": 148196,
+  "native_display_scaling": "UNVERIFIED",
+  "catalogue_unchanged": true,
+  "source_data": "generated disposable images only",
+  "captures": [
+    {
+      "file": "after-library-years-1280.png",
+      "viewport": [
+        1280,
+        840
+      ],
+      "rendered": [
+        1280,
+        882
+      ],
+      "sha256": "53f2798e147663e4ea74c258e37c5c62a0a650db9b810430cde1a2597cb5f1cf",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA",
+      "album_geometry": {
+        "row_rect": [
+          0,
+          0,
+          129,
+          29
+        ],
+        "viewport": [
+          758,
+          30
+        ],
+        "table_height": 81,
+        "header_height": 35,
+        "horizontal_scrollbar_visible": true,
+        "horizontal_scrollbar_height": 14,
+        "row_fully_contained": true
+      }
+    },
+    {
+      "file": "after-library-years-1040.png",
+      "viewport": [
+        1040,
+        840
+      ],
+      "rendered": [
+        1040,
+        882
+      ],
+      "sha256": "6dbdd797efb8e9f87a719fc278f1ec1f92c830cf9607939ba3e21e1a9a1f5fc0",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA",
+      "album_geometry": {
+        "row_rect": [
+          0,
+          0,
+          129,
+          29
+        ],
+        "viewport": [
+          529,
+          30
+        ],
+        "table_height": 81,
+        "header_height": 35,
+        "horizontal_scrollbar_visible": true,
+        "horizontal_scrollbar_height": 14,
+        "row_fully_contained": true
+      }
+    },
+    {
+      "file": "after-library-years-1920.png",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "rendered": [
+        1920,
+        1122
+      ],
+      "sha256": "66b10c981dda3f5461527d3e1b8c852315316ed67c533dca255fb294b55f71d6",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA",
+      "album_geometry": {
+        "row_rect": [
+          0,
+          0,
+          129,
+          29
+        ],
+        "viewport": [
+          1338,
+          100
+        ],
+        "table_height": 137,
+        "header_height": 35,
+        "horizontal_scrollbar_visible": false,
+        "horizontal_scrollbar_height": 14,
+        "row_fully_contained": true
+      }
+    },
+    {
+      "file": "after-selected-content-1280.png",
+      "viewport": [
+        1280,
+        840
+      ],
+      "rendered": [
+        1280,
+        882
+      ],
+      "sha256": "00fa6bfe4167ba06e93716e810c8dc089d2428a800db2c458f059c00e8ff59c6",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA",
+      "album_geometry": {
+        "row_rect": [
+          0,
+          0,
+          129,
+          29
+        ],
+        "viewport": [
+          758,
+          30
+        ],
+        "table_height": 81,
+        "header_height": 35,
+        "horizontal_scrollbar_visible": true,
+        "horizontal_scrollbar_height": 14,
+        "row_fully_contained": true
+      }
+    }
+  ]
+}
