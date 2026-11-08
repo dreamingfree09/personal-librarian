@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QPlainTextEdit,
     QSplitter,
+    QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -35,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from personal_librarian.desktop.quiet_archive import apply_theme, text_label
 from personal_librarian.desktop.services import DesktopDataService
 from personal_librarian.desktop.library_page import LibraryPage
 from personal_librarian.desktop.preferences import (
@@ -131,64 +134,138 @@ class AsyncPage(QWidget):
 
 
 class OverviewPage(AsyncPage):
+    navigate_requested = Signal(int)
+    library_requested = Signal(str)
+
     def __init__(self, service: DesktopDataService) -> None:
         super().__init__(service)
+        apply_theme(self)
+        self._request_generation = 0
         layout = QVBoxLayout(self)
-        title = QLabel("Overview")
-        title.setObjectName("pageTitle")
-        layout.addWidget(title)
-        self.message = QLabel("Loading production catalogue health…")
-        self.message.setWordWrap(True)
+        layout.setContentsMargins(24, 20, 24, 16)
+        layout.setSpacing(12)
+        layout.addWidget(text_label("Your library, at a glance", name="pageTitle"))
+        layout.addWidget(text_label("Find your years. Review what needs attention. Keep recovery in view.", name="helpText"))
+        self.message = text_label("Loading catalogue health…")
+        self.message.setAccessibleName("Catalogue connection and owner decision availability")
         layout.addWidget(self.message)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        body = QWidget()
+        body.setObjectName("archiveCanvas")
+        body.setMinimumWidth(0)
+        cards = QGridLayout(body)
+        cards.setSpacing(16)
         self.values: dict[str, QLabel] = {}
-        groups = (
-            (
-                "Catalogue",
-                (("health", "Health"), ("catalogue_uuid", "UUID"),
-                 ("schema_version", "Schema"), ("file_size_bytes", "Size")),
-            ),
-            (
-                "Library",
-                (("physical_instances", "Physical instances"),
-                 ("content_identities", "Content identities")),
-            ),
-            (
-                "Review",
-                (("exact_duplicate_groups", "Exact groups"),
-                 ("similarity_groups", "Similar groups"),
-                 ("decision_events", "Owner decisions")),
-            ),
-            (
-                "Safety / Actions",
-                (("action_plans", "Plans"), ("quarantine_records", "Quarantine records"),
-                 ("recovery_required", "Recovery required")),
-            ),
-            (
-                "Backups",
-                (("operational_backup", "Operational"),
-                 ("independent_backup", "Independent / DR")),
-            ),
-        )
-        cards = QGridLayout()
-        for index, (title_text, fields) in enumerate(groups):
-            card = QGroupBox(title_text)
-            card.setObjectName("overviewCard")
-            form = QFormLayout(card)
+
+        def card(title: str, fields: tuple, row: int, column: int):
+            group = QGroupBox(title)
+            form = QVBoxLayout(group)
             for key, label in fields:
-                value = QLabel("—")
+                form.addWidget(text_label(label, name="helpText"))
+                value = text_label("Not yet assessed", name="metric" if key in {
+                    "content_identities", "physical_instances", "exact_duplicate_groups",
+                    "similarity_groups", "needs_review"} else "")
                 value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                value.setAccessibleName(label)
                 self.values[key] = value
-                form.addRow(label, value)
-            cards.addWidget(card, index // 2, index % 2)
-        layout.addLayout(cards)
-        layout.addStretch()
+                form.addWidget(value)
+            cards.addWidget(group, row, column)
+            return group, form
+
+        _, library = card("Library", (("content_identities", "Library items · distinct content"),
+                          ("physical_instances", "Physical copies")), 0, 0)
+        self.year_summary = text_label("Year shelves are loading…", name="helpText")
+        library.addWidget(self.year_summary)
+        self.browse_button = QPushButton("Browse your years")
+        self.browse_button.setProperty("primary", True)
+        self.browse_button.clicked.connect(lambda: self.library_requested.emit("years"))
+        library.addWidget(self.browse_button)
+        _, review = card("Review", (("exact_duplicate_groups", "Exact groups · identical content"),
+                        ("similarity_groups", "Similar groups · distinct images"),
+                        ("needs_review", "Preferred dates needing review")), 0, 1)
+        self.dates_button = QPushButton("Review conflicting dates")
+        self.dates_button.clicked.connect(lambda: self.library_requested.emit("needs_review"))
+        review.addWidget(self.dates_button)
+        _, backups = card("Backups", (("operational_backup", "Operational recovery point"),
+                           ("independent_backup", "Independent disaster recovery")), 1, 0)
+        backups.addWidget(text_label("Catalogue health does not prove independent recovery readiness.", name="helpText"))
+        self.backups_button = QPushButton("View backup details")
+        self.backups_button.clicked.connect(lambda: self.navigate_requested.emit(7))
+        backups.addWidget(self.backups_button)
+        _, safety = card("Safety / Actions", (("decision_events", "Owner decisions · preserved history"),
+                          ("action_plans", "Read-only plans"),
+                          ("quarantine_records", "Quarantine history"),
+                          ("recovery_required", "Executions requiring recovery")), 1, 1)
+        self.history_button = QPushButton("View decision history")
+        self.history_button.clicked.connect(lambda: self.navigate_requested.emit(4))
+        safety.addWidget(self.history_button)
+        self.details_button = QPushButton("Show catalogue details")
+        self.details_button.setCheckable(True)
+        cards.addWidget(self.details_button, 2, 0, 1, 2)
+        self.catalogue_details, _ = card("Catalogue", (("health", "Health result"),
+                              ("catalogue_uuid", "Catalogue identity"),
+                              ("schema_version", "Schema"), ("file_size_bytes", "Catalogue size")), 3, 0)
+        cards.removeWidget(self.catalogue_details)
+        cards.addWidget(self.catalogue_details, 3, 0, 1, 2)
+        self.catalogue_details.hide()
+        self.details_button.toggled.connect(self._show_details)
+        cards.setColumnStretch(0, 1)
+        cards.setColumnStretch(1, 1)
+        scroll.setWidget(body)
+        layout.addWidget(scroll)
+        layout.addWidget(text_label("Organisation is logical. Albums and Collections never move files. Physical actions are unavailable here.", name="boundaryNotice"))
+        self._clear_pending()
+
+    def _show_details(self, checked: bool) -> None:
+        self.catalogue_details.setVisible(checked)
+        self.details_button.setText("Hide catalogue details" if checked else "Show catalogue details")
+
+    def _clear_pending(self) -> None:
+        for value in self.values.values():
+            value.setText("Not yet assessed")
+        for button in (self.browse_button, self.dates_button, self.backups_button, self.history_button):
+            button.setEnabled(False)
+            button.setToolTip("Unavailable until the current catalogue read succeeds.")
+        self.year_summary.setText("Year shelves are loading…")
+
+    def _snapshot(self) -> dict[str, Any]:
+        report = self.service.dashboard()
+        if report["health"].get("summary") != "FAIL":
+            report["year_shelves"] = self.service.browse_years()
+            if int(report["health"].get("schema_version", 0)) >= 10:
+                report["preferred_counts"] = self.service.preferred_counts()
+        return report
 
     def refresh(self) -> None:
-        self.message.setText("Loading production catalogue health…")
-        self.run_async(self.service.dashboard, self._loaded, self._failed)
+        self._request_generation += 1
+        request = self._request_generation
+        self._clear_pending()
+        self.message.setText("Loading catalogue health…")
+        # Retain AsyncPage's bound QObject receiver pattern. A transient lambda
+        # receiver can disappear with its auto-deleted QRunnable wrapper.
+        self.run_async(lambda: self._snapshot_for_request(request), self._snapshot_ready)
+
+    def _snapshot_for_request(self, request: int) -> tuple:
+        try:
+            return request, self._snapshot(), None
+        except Exception as exc:
+            return request, None, str(exc)
+
+    def _snapshot_ready(self, result: tuple) -> None:
+        request, report, error = result
+        if request != self._request_generation:
+            return
+        if error is not None:
+            self._failed(error)
+        else:
+            self._loaded(report)
 
     def _failed(self, message: str) -> None:
-        self.message.setText(f"Catalogue unavailable: {message}\nProduction bootstrap is required; nothing was created.")
+        self._clear_pending()
+        self.year_summary.setText("Year shelves unavailable")
+        self.message.setText(f"Catalogue unavailable: {message}\nNothing was created or changed.")
 
     def _loaded(self, report: dict[str, Any]) -> None:
         health = report["health"]
@@ -197,33 +274,39 @@ class OverviewPage(AsyncPage):
             return
         counts = report["counts"]
         disaster = health.get("disaster_recovery", {})
-        self.message.setText(
-            "Catalogue connected. Owner decision writes are "
-            + ("available." if report["decision_writes_enabled"] else "disabled by health state.")
-        )
+        def backup_age(value: object) -> str:
+            return "verification time unavailable" if value is None else f"latest {_format_age(value)} old"
+        self.message.setText("Catalogue connected. Owner decision writes are "
+                             + ("available with confirmation." if report["decision_writes_enabled"]
+                                else "disabled by health state."))
         values = {
             "health": health["summary"], "catalogue_uuid": health["catalogue_uuid"],
-            "schema_version": health["schema_version"],
-            "file_size_bytes": format_bytes(health["file_size_bytes"]),
+            "schema_version": health["schema_version"], "file_size_bytes": format_bytes(health["file_size_bytes"]),
             "physical_instances": f"{counts['physical_instances']:,}",
             "content_identities": f"{counts['content_identities']:,}",
             "exact_duplicate_groups": f"{counts['exact_duplicate_groups']:,}",
             "similarity_groups": f"{counts['similarity_groups']:,}",
-            "operational_backup": (
-                f"{health['backup_count']} accepted · latest "
-                f"{_format_age(health.get('backup_age_seconds'))} old"
-            ),
-            "independent_backup": (
-                f"{disaster.get('summary', 'NOT ASSESSED')} · latest "
-                f"{_format_age(disaster.get('backup_age_seconds'))} old"
-            ),
+            "operational_backup": f"{health['backup_count']} accepted · {backup_age(health.get('backup_age_seconds'))}",
+            "independent_backup": f"{str(disaster.get('summary', 'NOT ASSESSED')).replace('_', ' ')} · {backup_age(disaster.get('backup_age_seconds'))}",
             "recovery_required": health["recovery_required_executions"],
-            "decision_events": counts["decision_events"],
-            "action_plans": counts["action_plans"],
+            "decision_events": counts["decision_events"], "action_plans": counts["action_plans"],
             "quarantine_records": counts["quarantine_records"],
+            "needs_review": (str(sum(int(row["content_count"]) for row in report["preferred_counts"]["counts"]
+                                     if row["status"] == "needs_review"))
+                             if "preferred_counts" in report else "Unavailable in this catalogue"),
         }
         for key, value in values.items():
             self.values[key].setText(str(value))
+        shelves = report.get("year_shelves", {}).get("years")
+        self.year_summary.setText(
+            "Browse by recorded year, with unresolved dates kept on the Unknown Date shelf."
+            if shelves else "No year shelves are available yet.")
+        for button in (self.browse_button, self.backups_button, self.history_button):
+            button.setEnabled(True)
+            button.setToolTip("Open the existing read-only view.")
+        self.dates_button.setEnabled("preferred_counts" in report)
+        self.dates_button.setToolTip("Open Needs Review; no date is chosen automatically."
+                                    if self.dates_button.isEnabled() else "Preferred-date review is unavailable in this catalogue.")
 
 
 class ReviewPage(AsyncPage):
@@ -1163,6 +1246,8 @@ class MainWindow(QMainWindow):
             ),
             BackupPage(service),
         ]
+        self.pages[0].navigate_requested.connect(self.navigation.setCurrentRow)
+        self.pages[0].library_requested.connect(self._open_library)
         for page in self.pages:
             self.stack.addWidget(page)
         shell.addWidget(self.stack)
@@ -1192,9 +1277,19 @@ class MainWindow(QMainWindow):
         )
         self._refresh_health()
 
+    def _open_library(self, mode: str) -> None:
+        library = self.pages[1]
+        library.tabs.setCurrentIndex(0)
+        library.date_filter.setCurrentIndex(1 if mode == "needs_review" else 0)
+        self.navigation.setCurrentRow(1)
+
     def _section_changed(self, index: int) -> None:
         if index < 0:
             return
+        # Only the two responsive prototype pages may ignore hidden pages' size
+        # hints. Keep legacy pages' normal minimum sizing when they are active.
+        policy = QSizePolicy.Ignored if index in (0, 1) else QSizePolicy.Preferred
+        self.stack.setSizePolicy(policy, policy)
         self.stack.setCurrentIndex(index)
         self.statusBar().showMessage(
             f"{self.SECTION_NAMES[index]} · "

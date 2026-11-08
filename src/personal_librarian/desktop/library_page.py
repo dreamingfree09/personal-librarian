@@ -15,9 +15,10 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QPlainTextEdit, QPushButton, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget, QScrollArea, QSizePolicy,
 )
 
+from personal_librarian.desktop.quiet_archive import FlowLayout, apply_theme
 from personal_librarian.desktop.preferences import UiPreferences
 from personal_librarian.desktop.services import DesktopDataService
 from personal_librarian.desktop.thumbnails import ThumbnailService, ThumbnailTask, thumbnail_icon_size
@@ -277,6 +278,7 @@ class LibraryPage(QWidget):
     def __init__(self, service: DesktopDataService, preferences: UiPreferences) -> None:
         super().__init__()
         self.service = service
+        apply_theme(self)
         self.pool = QThreadPool.globalInstance()
         self._active_workers: set[_Worker] = set()
         self.page_size = preferences.page_size
@@ -309,26 +311,31 @@ class LibraryPage(QWidget):
         self.thumbnail_service = ThumbnailService(service.layout.root, max_size=(160, 160))
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 16)
+        layout.setSpacing(12)
         heading = QLabel("Library")
         heading.setObjectName("pageTitle")
         layout.addWidget(heading)
         notice = QLabel(
-            "Years use the current preferred-date interpretation on schema 10. Albums, tags, "
-            "and Collections are logical only; nothing here changes media paths."
+            "Browse by year. Albums, tags and Collections are logical groupings — they never "
+            "create folders or move files. Date evidence and history remain available."
         )
         notice.setObjectName("boundaryNotice")
         notice.setWordWrap(True)
         notice.setToolTip("Raw date evidence is preserved separately from the preferred interpretation.")
         layout.addWidget(notice)
-        actor_row = QHBoxLayout()
+        actor_row = FlowLayout()
         actor_row.addWidget(QLabel("Owner / actor"))
         self.actor = QLineEdit(preferences.last_actor)
-        self.actor.setPlaceholderText("Required for every organisation change")
+        self.actor.setPlaceholderText("Required for changes")
+        self.actor.setToolTip("An explicit owner or actor is required for every organisation change.")
         self.actor.setMaximumWidth(320)
+        self.actor.setMinimumWidth(230)
         actor_row.addWidget(self.actor)
         actor_row.addWidget(QLabel("Reason (optional)"))
         self.reason = QLineEdit()
         self.reason.setMaximumWidth(420)
+        self.reason.setMinimumWidth(180)
         actor_row.addWidget(self.reason)
         actor_row.addStretch()
         layout.addLayout(actor_row)
@@ -339,6 +346,7 @@ class LibraryPage(QWidget):
         self._build_collections_tab()
         self._build_tags_tab()
         self._build_history_tab()
+        self._label_controls()
         self.tabs.setCurrentIndex(preferences.library_tab)
         self.collection_filter.setCurrentText(preferences.collection_filter.title())
 
@@ -348,6 +356,9 @@ class LibraryPage(QWidget):
         split = QSplitter(Qt.Horizontal)
         self.years = QListWidget()
         self.years.setMinimumWidth(170)
+        self.years.setMaximumWidth(215)
+        self.years.setSpacing(5)
+        self.years.setAccessibleName("Year shelves, including Unknown Date")
         self.years.itemSelectionChanged.connect(self._year_selected)
         split.addWidget(self.years)
         right = QWidget()
@@ -355,7 +366,7 @@ class LibraryPage(QWidget):
         self.year_heading = QLabel("Select a year")
         self.year_heading.setObjectName("pageTitle")
         right_layout.addWidget(self.year_heading)
-        album_controls = QHBoxLayout()
+        album_controls = FlowLayout()
         album_controls.addWidget(QLabel("Albums"))
         self.album_filter = QComboBox()
         self.album_filter.addItems(("Active", "Archived", "All"))
@@ -382,7 +393,7 @@ class LibraryPage(QWidget):
         right_layout.addWidget(self.albums)
         self.album_message = QLabel("No albums have been created for this year yet.")
         right_layout.addWidget(self.album_message)
-        browser_controls = QHBoxLayout()
+        browser_controls = FlowLayout()
         self.unorganised = QComboBox()
         self.unorganised.addItems(("All Photos & Videos", "Unsorted / Not yet organised"))
         self.unorganised.currentIndexChanged.connect(self._filter_changed)
@@ -405,6 +416,7 @@ class LibraryPage(QWidget):
         self.content_message = QLabel("No content with reliable year evidence was found.")
         right_layout.addWidget(self.content_message)
         content_split = QSplitter(Qt.Horizontal)
+        self.content_split = content_split
         self.content = self._preview_list(multi=True)
         self.content.itemSelectionChanged.connect(self._content_selected)
         content_split.addWidget(self.content)
@@ -413,7 +425,7 @@ class LibraryPage(QWidget):
         self.content_detail = QLabel("Select content to see its logical organisation.")
         self.content_detail.setWordWrap(True)
         detail_layout.addWidget(self.content_detail)
-        date_actions = QHBoxLayout()
+        date_actions = FlowLayout()
         self.evidence_button = QPushButton("View date evidence")
         self.evidence_button.clicked.connect(self._view_date_evidence)
         self.owner_date_button = QPushButton("Set / replace preferred date")
@@ -432,16 +444,18 @@ class LibraryPage(QWidget):
         detail_layout.addWidget(self.remove_button)
         content_split.addWidget(detail)
         content_split.setSizes([700, 420])
+        content_split.setMinimumHeight(350)
+        detail.setMinimumWidth(0)
         right_layout.addWidget(content_split)
         split.addWidget(right)
         split.setSizes([180, 1000])
         root.addWidget(split)
-        self.tabs.addTab(tab, "Years")
+        self.tabs.addTab(self._scroll_tab(tab), "Years")
 
     def _build_collections_tab(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        heading = QLabel("Collections")
+        heading = QLabel("Collections · across all years")
         heading.setObjectName("pageTitle")
         layout.addWidget(heading)
         self.collection_availability = QLabel(
@@ -451,7 +465,7 @@ class LibraryPage(QWidget):
         self.collection_availability.setWordWrap(True)
         self.collection_availability.setObjectName("boundaryNotice")
         layout.addWidget(self.collection_availability)
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         self.collection_filter = QComboBox()
         self.collection_filter.addItems(("Active", "Archived", "All"))
         self.collection_filter.currentIndexChanged.connect(self._collections_filter_changed)
@@ -488,7 +502,7 @@ class LibraryPage(QWidget):
         self.collection_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.collection_table.itemSelectionChanged.connect(self._collection_selected)
         left_layout.addWidget(self.collection_table)
-        collection_pages = QHBoxLayout()
+        collection_pages = FlowLayout()
         self.collection_previous = QPushButton("Previous Collections")
         self.collection_next = QPushButton("Next Collections")
         self.collection_previous.clicked.connect(lambda: self._move_collection_page(-1))
@@ -505,7 +519,7 @@ class LibraryPage(QWidget):
         right_layout.addWidget(self.collection_detail)
         self.collection_members = self._preview_list(multi=True)
         right_layout.addWidget(self.collection_members)
-        member_pages = QHBoxLayout()
+        member_pages = FlowLayout()
         self.collection_member_previous = QPushButton("Previous members")
         self.collection_member_next = QPushButton("Next members")
         self.collection_member_previous.clicked.connect(
@@ -518,7 +532,7 @@ class LibraryPage(QWidget):
         member_pages.addWidget(self.collection_member_next)
         member_pages.addStretch()
         right_layout.addLayout(member_pages)
-        member_controls = QHBoxLayout()
+        member_controls = FlowLayout()
         remove = QPushButton("Remove selected")
         remove.clicked.connect(lambda: self._change_collection_members("remove"))
         restore = QPushButton("Restore selected")
@@ -531,13 +545,13 @@ class LibraryPage(QWidget):
         split.addWidget(right)
         split.setSizes([520, 680])
         layout.addWidget(split)
-        self.tabs.addTab(tab, "Collections")
+        self.tabs.addTab(self._scroll_tab(tab), "Collections")
 
     def _build_tags_tab(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.addWidget(QLabel("Tags are owner-created descriptive labels, not albums or Collections."))
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         create = QPushButton("Create tag")
         create.clicked.connect(self._create_tag)
         add = QPushButton("Add tag to selected content")
@@ -553,12 +567,12 @@ class LibraryPage(QWidget):
         layout.addWidget(self.tag_message)
         self.tags = QListWidget()
         layout.addWidget(self.tags)
-        self.tabs.addTab(tab, "Tags")
+        self.tabs.addTab(self._scroll_tab(tab), "Tags")
 
     def _build_history_tab(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         self.history_domain = QComboBox()
         self.history_domain.addItems(("All", "Albums / Tags", "Collections", "Preferred Dates"))
         self.history_domain.currentIndexChanged.connect(self._history_filter_changed)
@@ -583,7 +597,46 @@ class LibraryPage(QWidget):
         )
         self.history.setEditTriggers(QAbstractItemView.NoEditTriggers)
         layout.addWidget(self.history)
-        self.tabs.addTab(tab, "History")
+        self.tabs.addTab(self._scroll_tab(tab), "History")
+
+    @staticmethod
+    def _scroll_tab(tab: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        tab.setMinimumWidth(0)
+        tab.setObjectName("archiveCanvas")
+        scroll.setWidget(tab)
+        return scroll
+
+    def _label_controls(self) -> None:
+        names = ((self.actor, "Owner or actor; required for changes"),
+                 (self.reason, "Optional reason for the explicit owner change"),
+                 (self.tabs, "Library views"), (self.content, "Content in the selected year or date filter"),
+                 (self.members, "Selected Album members"), (self.albums, "Logical Albums in this year"),
+                 (self.collection_table, "Collections across all years"),
+                 (self.collection_members, "Selected Collection members"),
+                 (self.date_filter, "Preferred-date filter"), (self.unorganised, "Organisation filter"))
+        for widget, name in names:
+            widget.setAccessibleName(name)
+        for label in self.findChildren(QLabel):
+            label.setTextFormat(Qt.PlainText)
+            label.setWordWrap(True)
+            label.setMinimumWidth(0)
+            label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        for button in self.findChildren(QPushButton):
+            button.setAccessibleName(button.text())
+        self.content.setAccessibleDescription("Selection is by content identity. At most 50 items may be changed; changes require owner confirmation.")
+        self.collection_table.setAccessibleDescription("Independent of the Year shelf. Collections contain content directly, not Albums.")
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        narrow = self.width() < 1000
+        orientation = Qt.Vertical if narrow else Qt.Horizontal
+        if self.content_split.orientation() != orientation:
+            self.content_split.setOrientation(orientation)
+            self.content_split.setMinimumHeight(560 if narrow else 350)
+            self.content_split.setSizes([300, 260] if narrow else [600, 360])
 
     @staticmethod
     def _preview_list(*, multi: bool) -> QListWidget:
@@ -651,7 +704,7 @@ class LibraryPage(QWidget):
         for button in self.collection_mutation_buttons:
             button.setEnabled(self.m30_enabled)
         self.collection_availability.setText(
-            "Schema 10 Collections are direct content-identity groupings with no media effect."
+            "Collections span all years. The Year shelf does not filter this view. Logical membership only; no media effect."
             if self.m30_enabled else
             f"Schema {self.schema_version} compatibility mode: preferred dates and Collections "
             "are unavailable; no schema-10 query or automatic migration is attempted."
