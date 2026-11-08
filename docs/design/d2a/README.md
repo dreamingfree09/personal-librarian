@@ -2,7 +2,9 @@
 
 **Technical and visual review required. No merge or release.** Related to [issue #23](https://github.com/dreamingfree09/personal-librarian/issues/23).
 
-Implementation source commit: `6cfc86dd8bf6e9e2f181460b640c391875f7ca9b`.
+Initial implementation: `6cfc86dd8bf6e9e2f181460b640c391875f7ca9b`.
+Selected-detail correction: `2fcfa2d7d26b1af79be3637955b22878cacab012`.
+Final captured source: `f09346e3f909f841303c2b2b2ce41c7d4e6e0e33`.
 Protected base: `ad26c9b3c2d8d33188b1e97b4bbb38c368100bef`, tree `a3cb664fbb32d2c2894fb0ad7ce4b33716ae08e9`.
 Approved D1 reference: [PR #22, c61f213](https://github.com/dreamingfree09/personal-librarian/pull/22), tree `fda9ff258d3d04453822fe7ca741c8d86687b79b`. Original D1 artwork is unchanged.
 
@@ -69,7 +71,7 @@ members accessible. This prototype makes no decision for D2B.
 [Local validation record](local-validation.json), [after capture manifest](after-capture-manifest.json), [before capture manifest](before-capture-manifest.json), [SHA-256 index](SHA256SUMS.json).
 
 - Final focused desktop run: **88 tests, zero failures/errors/skips, process and observer exit 0**.
-- Full local Windows attempt: **385 tests, 2 environment errors, 4 skips, child/observer exit 1**. Both errors occurred creating synthetic symlinks (`WinError 1314`). The host has Python 3.13.1 / Pillow 12.3.0; it is not the pinned hosted qualification environment. Evidence is retained; no failure converted to a skip or success and no host policy/dependency changed. The additional final event-loop test is covered by focused and hosted runs.
+- Full local Windows attempt: **386 tests, 2 environment errors, 4 skips, child/observer exit 1**. Both errors occurred creating synthetic symlinks (`WinError 1314`). The host has Python 3.13.1 / Pillow 12.3.0; it is not the pinned hosted qualification environment. Evidence is retained; no failure converted to a skip or success and no host policy/dependency changed. The original 385-test attempt is also retained. The corrected source was tested again because of the demonstrated clipping defect, not to obtain a green rerun.
 - Complete hosted Windows CI and both qualified Python 3.13.16/3.13.17 lifecycle checks must be read at the exact draft PR revision. Their actual process exits and results are recorded in the PR handover; local failure is not erased by hosted success.
 - Source compilation and CRLF-aware whitespace checks passed. Original worker/review class ASTs compare unchanged.
 - Final offscreen captures exited 0; synthetic catalogue SHA-256 was unchanged before/after navigation, rendering and close.
@@ -80,7 +82,7 @@ First capture failures and corrections remain in private evidence: an incorrect
 fixture API argument; offscreen font discovery rendering boxes; hidden-page sizing;
 and a new transient Overview callback that failed to deliver. Corrections were
 limited to the helper/presentation layer, with real-worker and real-shell tests
-added. No previous failed output was overwritten or presented as final evidence.
+added. A final visual check also demonstrated clipped long selected-item text; the existing label now sits in a scrollable container, and the focused test verifies its complete height and reachable scroll range. One subsequent fixture capture lacked previews because of a long private cache path on this host; it was retained but not published. The final capture uses a shorter disposable path and now asserts every expected preview is present. No previous failed output was overwritten or presented as final evidence.
 
 ## Remaining visual review points
 

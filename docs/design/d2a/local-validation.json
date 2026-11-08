@@ -5,10 +5,11 @@
     "errors": 0,
     "skips": 0,
     "process_exit": 0,
-    "observer_exit": 0
+    "observer_exit": 0,
+    "seconds": 15.224
   },
   "local_complete_suite_attempt": {
-    "tests": 385,
+    "tests": 386,
     "errors": 2,
     "skipped": 4,
     "process_exit": 1,
@@ -18,7 +19,7 @@
       "test_linked_cache_is_not_read",
       "test_preference_file_links_neither_read_nor_write_external_content"
     ],
-    "note": "Retained unsuccessful first local full run; no tests or host settings changed to suppress it. Final event-loop regression added subsequently."
+    "note": "Final corrected application source: 386 tests; same two symlink-privilege errors/four environment skips. Original 385-test failure also retained."
   },
   "local_runtime": {
     "python": "3.13.1",
@@ -49,5 +50,7 @@
     "PR #10 remains unmerged",
     "Qt 6.12 shutdown unresolved",
     "G3/G4 historical audit availability unresolved"
-  ]
+  ],
+  "selected_detail_scroll": "PASS: full wrapped label height and reachable vertical scroll range",
+  "complete_synthetic_previews": "PASS: every expected year item has a non-null preview"
 }

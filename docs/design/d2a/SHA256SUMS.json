@@ -1,16 +1,16 @@
 {
-  "after-capture-manifest.json": "4083b9e203ae19e063d35157edb2e92ef89bf11f0ee4772ea0433eccbefbd461",
+  "after-capture-manifest.json": "0aed83d7ace9129e34baffa5146afd356e854f45f895e94a792030272dedbac6",
   "before-capture-manifest.json": "f2547e5276bb8a176067453c9718787f82cb43f723539f7a7870ed29c5fd3d3c",
-  "captures/after-collections-1280.png": "26a7ca6b4bece4aec0992150ab848b856750726c23218a81267343332811b18e",
-  "captures/after-library-years-1040.png": "909779154ed161cbd8cb5cc1afd6eb09ba1aad599901115f61307ba0c488a885",
-  "captures/after-library-years-1280.png": "3c397725fd6ffa2e35d87a8ad9e3d7f3ce39bd20149f28f7703fc489897386f0",
-  "captures/after-library-years-1920.png": "c451d8254527670922a1ba376ddd6925fe12421d8502b458248fde844b4e1041",
+  "captures/after-collections-1280.png": "59102edca009d92a1664bafeaf303b5803ae0c16a54ecba476e29bb9f584cffe",
+  "captures/after-library-years-1040.png": "40c14eb67e95ee538f6271c82c7fe0d62223132f689d3b6b3ee2de24d7a63e29",
+  "captures/after-library-years-1280.png": "72a0bb1a0ba2d64f2fbc4f001acb0c6ba59b3a7a4a1a6d7d19d6c8c36043e54d",
+  "captures/after-library-years-1920.png": "fb1110410e980254a62b5ed9dce17c662f9653c3eeff17891b82a66dad6f1f8e",
   "captures/after-overview-1040.png": "bde21feea0c91dafc1361a4edb1ba6309f88921162dd70b14bdc228df058cfd2",
   "captures/after-overview-1280.png": "4ff9f6fd1537c917016752ef294310da70dec66c8bfd048a2f273de959ed8bf0",
   "captures/after-overview-1920.png": "235f4dc55f0df71a782813adebe6ead452e9cb9cb9d0435e0b1c1e0e470d17f6",
-  "captures/after-selected-content-1280.png": "652a435885eb4550e7d774141a6c37d6387d38c5b4b0a0aa30cc104ef8bd0a94",
+  "captures/after-selected-content-1280.png": "ab0d3bb6994bca981bad9f6f344604743b6738bd2f9a8c6725b7abeb492b53d5",
   "captures/before-library-years-1280.png": "11e021dceefd644a313307fceb67027d8174c28b9657e58dad132b77f367bc36",
   "captures/before-overview-1280.png": "cb3ff0c707153d480f4007d6d7536b8839375a1fb9308e2661bbe22bef42f4a8",
-  "local-validation.json": "b0e7296f2d7a60fcb395829b9cd8695b805bc78c8550e43bb525cbbd313d8084",
-  "README.md": "4aa7a95df39515fbf96a34dca218943159663bb9851b843ee9aa60d09a6306e2"
+  "local-validation.json": "68310f5ca10d07c3563c5aced0f0fe00e805ec51aa941100024693d5c49348a2",
+  "README.md": "864e9c89cd75646608fca5d6740a97d4d2146bd6b03cdb0188b13ee9bb401f0c"
 }
