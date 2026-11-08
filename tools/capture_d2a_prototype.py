@@ -99,6 +99,11 @@ def main():
     manifest=[]
     def capture(name,w,h):
         window.resize(w,h); settle()
+        if window.navigation.currentRow()==1 and window.pages[1].tabs.currentIndex()==0:
+            content=window.pages[1].content
+            assert content.count()==3, 'Synthetic year selection did not settle'
+            assert all(not content.item(i).icon().isNull() for i in range(content.count())), \
+                'Synthetic previews unavailable; capture is not complete'
         shot=window.grab()
         if args.label=='after':
             assert window.width()==w and window.height()==h, (name,window.size(),w,h)
