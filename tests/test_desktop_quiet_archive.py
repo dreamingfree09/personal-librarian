@@ -15,7 +15,8 @@ from PySide6.QtGui import QAccessible, QFont, QFontDatabase
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QComboBox, QLineEdit, QPushButton
 
-from personal_librarian.desktop.library_page import CONTENT_ROLE, LibraryPage
+from personal_librarian.desktop.library_page import ALBUM_ROLE, CONTENT_ROLE, LibraryPage
+from personal_librarian.organisation import create_album, add_content_to_album
 from personal_librarian.desktop.main_window import MainWindow, OverviewPage
 from personal_librarian.desktop.preferences import UiPreferences
 from tests.test_desktop_m30 import DesktopM30Case
@@ -239,3 +240,67 @@ class QuietArchiveTests(DesktopM30Case):
                     self.application.processEvents()
                     self.assertEqual((window.width(),window.height()),(width,height))
                     self.assertEqual(window.stack.currentIndex(),section)
+
+    def test_populated_album_row_is_readable_and_selectable_at_all_viewports(self):
+        album=create_album(database_path=self.database,
+                           name='Coast and mountains - synthetic review album',actor='Synthetic owner')
+        add_content_to_album(database_path=self.database,album_uuid=album['album_uuid'],
+                             content_identity_id=self.content_ids[0],actor='Synthetic owner')
+        with mock.patch('personal_librarian.desktop.main_window.AsyncPage.run_async'), mock.patch.object(LibraryPage,'run_async'):
+            window=MainWindow(self.service)
+        self.addCleanup(window.close)
+        page=window.pages[1]
+        page.run_async=lambda operation, completed: completed(operation())
+        window.navigation.setCurrentRow(1)
+        for row in range(page.years.count()):
+            if page.years.item(row).data(CONTENT_ROLE)==2019:
+                page.years.setCurrentRow(row)
+        window.show()
+        for width,height in ((1040,840),(1280,840),(1920,1080)):
+            with self.subTest(viewport=(width,height)):
+                window.resize(width,height)
+                for _ in range(5): self.application.processEvents()
+                outer=page.tabs.widget(0)
+                outer.ensureWidgetVisible(page.albums)
+                page.albums.horizontalScrollBar().setValue(0)
+                page.albums.scrollToTop()
+                self.application.processEvents()
+                self.assertEqual((window.width(),window.height()),(width,height))
+                self.assertEqual(page.albums.rowCount(),1)
+                index=page.albums.model().index(0,0)
+                rect=page.albums.visualRect(index)
+                self.assertTrue(page.albums.viewport().rect().contains(rect),
+                                (width,rect,page.albums.viewport().rect()))
+                self.assertGreaterEqual(rect.height(),page.albums.fontMetrics().height())
+                self.assertTrue(page.albums.horizontalHeader().isVisible())
+                if width<=1280:
+                    self.assertTrue(page.albums.horizontalScrollBar().isVisible())
+                    self.assertGreater(outer.verticalScrollBar().maximum(),0)
+                bar=page.albums.horizontalScrollBar()
+                if bar.isVisible():
+                    bar_top=bar.mapTo(page.albums,QPoint()).y()
+                    row_bottom=page.albums.viewport().mapTo(page.albums,rect.bottomRight()).y()
+                    self.assertLess(row_bottom,bar_top)
+                QTest.mouseClick(page.albums.viewport(),Qt.LeftButton,pos=rect.center())
+                for _ in range(5): self.application.processEvents()
+                self.assertEqual(page.albums.selectedItems()[0].data(ALBUM_ROLE),album['album_uuid'])
+                self.assertEqual(page._selected_album()['album_uuid'],album['album_uuid'])
+                self.assertEqual(page.current_year,2019)
+                self.assertGreaterEqual(page.content_split.height(),page.content_split.minimumHeight())
+                self.assertGreaterEqual(page.content_detail_scroll.height(),100)
+                outer.ensureWidgetVisible(page.content_detail_scroll)
+                for _ in range(5): self.application.processEvents()
+                evidence=page.content_detail_scroll
+                point=evidence.mapTo(outer.viewport(),QPoint())
+                self.assertTrue(outer.viewport().rect().contains(point))
+                self.assertTrue(outer.viewport().rect().contains(point+QPoint(evidence.width()-1,evidence.height()-1)))
+
+    def test_empty_album_table_keeps_header_and_no_selection(self):
+        page=self.page();page.resize(790,720);page.show()
+        self.application.processEvents()
+        self.assertEqual(page.albums.rowCount(),0)
+        self.assertTrue(page.albums.horizontalHeader().isVisible())
+        self.assertEqual(page.albums.selectedItems(),[])
+        self.assertIsNone(page._selected_album())
+        self.assertGreaterEqual(page.albums.viewport().height(),page.albums.verticalHeader().defaultSectionSize())
+        self.assertFalse(page.remove_button.isEnabled())

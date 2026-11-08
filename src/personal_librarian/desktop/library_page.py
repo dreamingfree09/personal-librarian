@@ -457,6 +457,15 @@ class LibraryPage(QWidget):
         split.setSizes([180, 1000])
         root.addWidget(split)
         self.tabs.addTab(self._scroll_tab(tab), "Years")
+        # Let the outer Years page scroll rather than starving the Albums row.
+        # Reserve scrollbar space even when hidden to avoid resize oscillation.
+        self.albums.ensurePolished()
+        self.albums.setMinimumHeight(
+            2 * self.albums.frameWidth()
+            + self.albums.horizontalHeader().sizeHint().height()
+            + self.albums.verticalHeader().defaultSectionSize()
+            + self.albums.horizontalScrollBar().sizeHint().height()
+        )
 
     def _build_collections_tab(self) -> None:
         tab = QWidget()

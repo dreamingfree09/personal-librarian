@@ -99,11 +99,24 @@ def main():
     manifest=[]
     def capture(name,w,h):
         window.resize(w,h); settle()
+        album_geometry=None
         if window.navigation.currentRow()==1 and window.pages[1].tabs.currentIndex()==0:
             content=window.pages[1].content
             assert content.count()==3, 'Synthetic year selection did not settle'
             assert all(not content.item(i).icon().isNull() for i in range(content.count())), \
                 'Synthetic previews unavailable; capture is not complete'
+            albums=window.pages[1].albums
+            assert albums.rowCount()==1, 'Expected one populated synthetic Album'
+            row=albums.visualRect(albums.model().index(0,0))
+            viewport=albums.viewport().rect()
+            if args.label=='after':
+                assert viewport.contains(row), 'First Album row is clipped'
+            album_geometry={'row_rect':[row.x(),row.y(),row.width(),row.height()],
+                'viewport':[viewport.width(),viewport.height()],
+                'table_height':albums.height(),'header_height':albums.horizontalHeader().height(),
+                'horizontal_scrollbar_visible':albums.horizontalScrollBar().isVisible(),
+                'horizontal_scrollbar_height':albums.horizontalScrollBar().height(),
+                'row_fully_contained':viewport.contains(row)}
         shot=window.grab()
         if args.label=='after':
             assert window.width()==w and window.height()==h, (name,window.size(),w,h)
@@ -114,7 +127,8 @@ def main():
         painter.end()
         target=out/(name+'.png'); assert canvas.save(str(target))
         manifest.append({'file':target.name,'viewport':[w,h],'rendered':[canvas.width(),canvas.height()],
-                         'sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'label':'OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA'})
+                         'sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'label':'OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA',
+                         'album_geometry':album_geometry})
 
     for width,height in ((1280,840),(1040,840),(1920,1080)):
         window.navigation.setCurrentRow(0); settle(); capture(f'{args.label}-overview-{width}',width,height)
