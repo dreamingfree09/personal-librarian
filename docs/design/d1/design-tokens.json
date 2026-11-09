@@ -1,0 +1,93 @@
+{
+  "status": "EXTRACTED EXISTING DESIGN PROPOSAL; NOT APPROVED OR RUNTIME CONFIGURATION",
+  "provenance": "Palette values transcribed from the retained original renderer; component values from the unchanged D1 report. No generator executed.",
+  "directions": {
+    "Quiet Archive": {
+      "bg": "#F5F6F3",
+      "surface": "#FFFFFF",
+      "ink": "#203C3A",
+      "muted": "#5D6F6C",
+      "line": "#D7E0DB",
+      "accent": "#126557",
+      "soft": "#E4F2EB",
+      "nav": "#EBF0EA",
+      "amber": "#87500B",
+      "amberbg": "#FFF0D8",
+      "blue": "#2456A6"
+    },
+    "Light Table": {
+      "bg": "#141A25",
+      "surface": "#202938",
+      "ink": "#F0F4FD",
+      "muted": "#B4C1D3",
+      "line": "#42516A",
+      "accent": "#8DB8FF",
+      "soft": "#273D5B",
+      "nav": "#182131",
+      "amber": "#FFD68E",
+      "amberbg": "#483C29",
+      "blue": "#A8C6FF"
+    }
+  },
+  "optional_unrendered_counterparts": {
+    "Quiet Archive dark": {
+      "canvas": "#182522",
+      "surface": "#22332E",
+      "ink": "#ECF2E9",
+      "muted": "#BDC9C0",
+      "accent": "#80C9AE"
+    },
+    "Light Table light": {
+      "canvas": "#F2F5FC",
+      "surface": "#FFFFFF",
+      "ink": "#1F2D45",
+      "muted": "#52627D",
+      "accent": "#2857A7"
+    }
+  },
+  "spacing_px": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32
+  ],
+  "sidebar_px": {
+    "standard": 192,
+    "wide": 192,
+    "narrow": 176
+  },
+  "main_padding_px": 28,
+  "corner_radius_px": {
+    "card": 14,
+    "control": 8
+  },
+  "control_height_px": [
+    38,
+    44
+  ],
+  "dense_table_row_minimum_px": 40,
+  "typography": {
+    "preferred": "Segoe UI Variable",
+    "fallback": "Segoe UI",
+    "page_px": [
+      30,
+      32
+    ],
+    "section_px": [
+      20,
+      24
+    ],
+    "body_px": 14,
+    "metadata_px": [
+      12,
+      13
+    ]
+  },
+  "focus": {
+    "width_px": 2,
+    "offset": true
+  },
+  "measurement_note": "Contrast JSON records the exact pairs originally tested; it does not certify every token combination, image, or implemented control."
+}

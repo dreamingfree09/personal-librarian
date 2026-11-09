@@ -1,0 +1,62 @@
+{
+  "head": "ad26c9b3c2d8d33188b1e97b4bbb38c368100bef",
+  "tree": "a3cb664fbb32d2c2894fb0ad7ce4b33716ae08e9",
+  "files": [
+    {
+      "path": "src/personal_librarian/desktop/main_window.py",
+      "sha256": "7cd6ad80bc5e0bd38fd9006bcc8ffe15214ed605a84c8bb70081ddfd94745207",
+      "lines": 1257
+    },
+    {
+      "path": "src/personal_librarian/desktop/library_page.py",
+      "sha256": "b4ea89be8e96a0be591665f4f0e2581d77baa57ac1b3938ea1cb53badc4f05a5",
+      "lines": 1569
+    },
+    {
+      "path": "src/personal_librarian/desktop/startup.py",
+      "sha256": "db6ec374531e10c8658b0e8fc283a64d8ff697baf23427c9a703421f3650c20a",
+      "lines": 93
+    },
+    {
+      "path": "src/personal_librarian/desktop/viewer.py",
+      "sha256": "4a2537a643aaf718d32f9851fc52e37c13ed7876fd50128825207771426b23ef",
+      "lines": 101
+    },
+    {
+      "path": "src/personal_librarian/desktop/preferences.py",
+      "sha256": "b0aebb3becbcbb30a64487ccd0cbf60288b72024aa85bd21c6a348b040ee536f",
+      "lines": 103
+    },
+    {
+      "path": "src/personal_librarian/desktop/ui_helpers.py",
+      "sha256": "0ab0c64fa9ad0262bcbce02de7eb51727a2cd1f903b332869907382a984b8749",
+      "lines": 159
+    },
+    {
+      "path": "docs/M23_DESKTOP_REVIEW_INTERFACE_FOUNDATION.md",
+      "sha256": "37fe6415f09f33d20d56ae87625bba9c078b1e609c58949952ea6a3ed4b03335",
+      "lines": 206
+    },
+    {
+      "path": "docs/M25_OWNER_USABILITY_FEEDBACK.md",
+      "sha256": "313bcf6220aaa42485a67309877528355b683d7d89d931eb01f73c2b72a10929",
+      "lines": 164
+    },
+    {
+      "path": "docs/M26_DESKTOP_UX_REFINEMENT.md",
+      "sha256": "4426a0022d72322411bb8818a4ca8a152a066001e460f831fdcb11c33d2fe105",
+      "lines": 100
+    },
+    {
+      "path": "docs/M29_YEAR_CENTRED_DESKTOP_ORGANISATION.md",
+      "sha256": "65bb08d7c998ba30f8a251fd6ab5132c96990c5dd5439bbab1041368d7e8b054",
+      "lines": 164
+    },
+    {
+      "path": "docs/M30_PREFERRED_DATE_COLLECTIONS.md",
+      "sha256": "16c7258c8651ecb2de6b6982bdeb1ce5d0f02b5c110448248d5ff4af1e0eff39",
+      "lines": 1731
+    }
+  ],
+  "source_reads": "repository only; no media, production catalogue, original owner files or protected objects"
+}
