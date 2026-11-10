@@ -353,14 +353,15 @@ class LibraryPage(QWidget):
     def _build_years_tab(self) -> None:
         tab = QWidget()
         root = QHBoxLayout(tab)
-        split = QSplitter(Qt.Horizontal)
+        # A layout propagates wrapped control heights to the outer scroll area.
+        # A splitter here hides height-for-width and can clip the final action.
         self.years = QListWidget()
         self.years.setMinimumWidth(170)
         self.years.setMaximumWidth(215)
         self.years.setSpacing(5)
         self.years.setAccessibleName("Year shelves, including Unknown Date")
         self.years.itemSelectionChanged.connect(self._year_selected)
-        split.addWidget(self.years)
+        root.addWidget(self.years)
         right = QWidget()
         right_layout = QVBoxLayout(right)
         self.year_heading = QLabel("Select a year")
@@ -453,9 +454,7 @@ class LibraryPage(QWidget):
         content_split.setMinimumHeight(350)
         detail.setMinimumWidth(0)
         right_layout.addWidget(content_split)
-        split.addWidget(right)
-        split.setSizes([180, 1000])
-        root.addWidget(split)
+        root.addWidget(right, 1)
         self.tabs.addTab(self._scroll_tab(tab), "Years")
         # Let the outer Years page scroll rather than starving the Albums row.
         # Reserve scrollbar space even when hidden to avoid resize oscillation.

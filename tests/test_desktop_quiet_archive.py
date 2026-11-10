@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from pathlib import Path
 import sys
 import time
@@ -10,9 +11,9 @@ from unittest import mock
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from PySide6.QtCore import QPoint, Qt, QTimer
-from PySide6.QtGui import QAccessible, QFont, QFontDatabase
-from PySide6.QtTest import QTest
+from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
+from PySide6.QtGui import QAccessible, QFont, QFontDatabase, QWheelEvent
+from PySide6.QtTest import QTest, QSignalSpy
 from PySide6.QtWidgets import QComboBox, QLineEdit, QPushButton
 
 from personal_librarian.desktop.library_page import ALBUM_ROLE, CONTENT_ROLE, LibraryPage
@@ -294,6 +295,77 @@ class QuietArchiveTests(DesktopM30Case):
                 point=evidence.mapTo(outer.viewport(),QPoint())
                 self.assertTrue(outer.viewport().rect().contains(point))
                 self.assertTrue(outer.viewport().rect().contains(point+QPoint(evidence.width()-1,evidence.height()-1)))
+
+    def test_album_remove_is_reachable_by_scroll_and_normal_tabs_without_mutation(self):
+        album=create_album(database_path=self.database,name='Synthetic reachability album',actor='Fixture')
+        add_content_to_album(database_path=self.database,album_uuid=album['album_uuid'],
+                             content_identity_id=self.content_ids[0],actor='Fixture')
+        before=hashlib.sha256(self.database.read_bytes()).hexdigest()
+        with mock.patch('personal_librarian.desktop.main_window.AsyncPage.run_async'), mock.patch.object(LibraryPage,'run_async'):
+            window=MainWindow(self.service)
+        self.addCleanup(window.close)
+        page=window.pages[1]
+        page.run_async=lambda operation,completed:completed(operation())
+        window.navigation.setCurrentRow(1)
+        for row in range(page.years.count()):
+            if page.years.item(row).data(CONTENT_ROLE)==2019:
+                page.years.setCurrentRow(row)
+        window.show()
+        page.albums.selectRow(0)
+        clicks=QSignalSpy(page.remove_button.clicked)
+        outer=page.tabs.widget(0)
+
+        def settle():
+            for _ in range(8): self.application.processEvents()
+
+        def wheel(delta):
+            bar=outer.verticalScrollBar()
+            position=bar.rect().center()
+            event=QWheelEvent(QPointF(position),QPointF(bar.mapToGlobal(position)),
+                              QPoint(),QPoint(0,delta),Qt.NoButton,Qt.NoModifier,Qt.NoScrollPhase,False)
+            self.application.sendEvent(bar,event);settle()
+
+        def fully_visible(widget):
+            rect=widget.rect().translated(widget.mapTo(outer.viewport(),QPoint()))
+            self.assertTrue(outer.viewport().rect().contains(rect),
+                            (window.size(),rect,outer.viewport().rect()))
+            self.assertTrue(widget.visibleRegion().contains(widget.rect()))
+            bar=outer.verticalScrollBar()
+            if bar.isVisible():
+                self.assertLess(widget.mapTo(outer,widget.rect().topRight()).x(),bar.mapTo(outer,QPoint()).x())
+
+        for width,height in ((1040,840),(1280,840),(1920,1080)):
+            with self.subTest(viewport=(width,height)):
+                window.resize(width,height);settle()
+                # Ordinary scrollbar keyboard navigation, not ensureWidgetVisible/setValue.
+                for _ in range(30):
+                    wheel(-120)
+                    if outer.verticalScrollBar().value()==outer.verticalScrollBar().maximum(): break
+                fully_visible(page.remove_button)
+                self.assertEqual(outer.verticalScrollBar().value(),outer.verticalScrollBar().maximum())
+                self.assertTrue(page.content_detail_scroll.isVisible())
+                self.assertGreaterEqual(page.content_detail_scroll.height(),100)
+                self.assertGreater(page.content.viewport().height(),page.content.fontMetrics().height())
+                self.assertGreater(page.members.viewport().height(),page.members.fontMetrics().height())
+                # Start with a visible member, then a real Tab key; do not activate Remove.
+                member_rect=page.members.visualItemRect(page.members.item(0))
+                visible=member_rect.intersected(page.members.viewport().rect())
+                self.assertFalse(visible.isEmpty())
+                point=visible.center()
+                self.assertTrue(outer.viewport().rect().contains(page.members.viewport().mapTo(outer.viewport(),point)))
+                QTest.mouseClick(page.members.viewport(),Qt.LeftButton,pos=point);settle()
+                self.assertIs(self.application.focusWidget(),page.members)
+                # Wheel back upward without changing the member-list focus.
+                # Tab must reveal the action itself, not merely focus a clipped button.
+                wheel(120)
+                QTest.keyClick(page.members,Qt.Key_Tab);settle()
+                self.assertIs(self.application.focusWidget(),page.remove_button)
+                fully_visible(page.remove_button)
+                self.assertEqual(page._selected_album()['album_uuid'],album['album_uuid'])
+                self.assertEqual(page.members.selectedItems()[0].data(CONTENT_ROLE),self.content_ids[0])
+                self.assertEqual(page.actor.text(),'')
+                self.assertEqual(clicks.count(),0)
+                self.assertEqual(hashlib.sha256(self.database.read_bytes()).hexdigest(),before)
 
     def test_empty_album_table_keeps_header_and_no_selection(self):
         page=self.page();page.resize(790,720);page.show()
