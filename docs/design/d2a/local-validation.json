@@ -1,0 +1,56 @@
+{
+  "local_focused": {
+    "tests": 88,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "process_exit": 0,
+    "observer_exit": 0,
+    "seconds": 15.224
+  },
+  "local_complete_suite_attempt": {
+    "tests": 386,
+    "errors": 2,
+    "skipped": 4,
+    "process_exit": 1,
+    "observer_exit": 1,
+    "cause": "WinError 1314 creating synthetic symlinks; host lacks required privilege.",
+    "error_tests": [
+      "test_linked_cache_is_not_read",
+      "test_preference_file_links_neither_read_nor_write_external_content"
+    ],
+    "note": "Final corrected application source: 386 tests; same two symlink-privilege errors/four environment skips. Original 385-test failure also retained."
+  },
+  "local_runtime": {
+    "python": "3.13.1",
+    "PySide6": "6.11.2",
+    "shiboken6": "6.11.2",
+    "Pillow": "12.3.0",
+    "numpy": "2.5.2"
+  },
+  "hosted_required_runtime": {
+    "python": [
+      "3.13.16",
+      "3.13.17"
+    ],
+    "PySide6": "6.11.2",
+    "shiboken6": "6.11.2",
+    "Pillow": "13.0.0",
+    "numpy": "2.5.4"
+  },
+  "native_interactive_acceptance": "UNVERIFIED - C2 remains blocked; controller not retried",
+  "windows_display_scaling_125_150_percent": "UNVERIFIED - no working interactive controller",
+  "capture_process_exits": {
+    "before": 0,
+    "after": 0
+  },
+  "synthetic_catalogue_unchanged": true,
+  "historical_findings": [
+    "Issue #9 remains open",
+    "PR #10 remains unmerged",
+    "Qt 6.12 shutdown unresolved",
+    "G3/G4 historical audit availability unresolved"
+  ],
+  "selected_detail_scroll": "PASS: full wrapped label height and reachable vertical scroll range",
+  "complete_synthetic_previews": "PASS: every expected year item has a non-null preview"
+}

@@ -1,0 +1,648 @@
+{
+  "source_blob_sha256": "9ae905cb016646db41637ffd75cd541c4b27f7101d82b3db8815371e8ff7ea3a",
+  "acceptance": "Offscreen Qt synthetic widget evidence; not interactive packaged application acceptance",
+  "results": [
+    {
+      "window": [
+        1040,
+        840
+      ],
+      "initial": {
+        "button_rect": [
+          248,
+          1173,
+          491,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          766,
+          524
+        ],
+        "scrollbar_rect": [
+          766,
+          0,
+          14,
+          524
+        ],
+        "scroll_value": 0,
+        "scroll_maximum": 714,
+        "fully_visible": false,
+        "button_focused": false,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          487,
+          509,
+          733
+        ],
+        "detail_rect": [
+          239,
+          827,
+          509,
+          393
+        ],
+        "evidence_rect": [
+          248,
+          836,
+          491,
+          100
+        ],
+        "members_rect": [
+          248,
+          1043,
+          491,
+          124
+        ]
+      },
+      "wheel_notches": 12,
+      "after_wheel": {
+        "button_rect": [
+          248,
+          459,
+          491,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          766,
+          524
+        ],
+        "scrollbar_rect": [
+          766,
+          0,
+          14,
+          524
+        ],
+        "scroll_value": 714,
+        "scroll_maximum": 714,
+        "fully_visible": true,
+        "button_focused": false,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          -227,
+          509,
+          733
+        ],
+        "detail_rect": [
+          239,
+          113,
+          509,
+          393
+        ],
+        "evidence_rect": [
+          248,
+          122,
+          491,
+          100
+        ],
+        "members_rect": [
+          248,
+          329,
+          491,
+          124
+        ]
+      },
+      "before_tab": {
+        "button_rect": [
+          248,
+          519,
+          491,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          766,
+          524
+        ],
+        "scrollbar_rect": [
+          766,
+          0,
+          14,
+          524
+        ],
+        "scroll_value": 654,
+        "scroll_maximum": 714,
+        "fully_visible": false,
+        "button_focused": false,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          -167,
+          509,
+          733
+        ],
+        "detail_rect": [
+          239,
+          173,
+          509,
+          393
+        ],
+        "evidence_rect": [
+          248,
+          182,
+          491,
+          100
+        ],
+        "members_rect": [
+          248,
+          389,
+          491,
+          124
+        ]
+      },
+      "after_tab": {
+        "button_rect": [
+          248,
+          459,
+          491,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          766,
+          524
+        ],
+        "scrollbar_rect": [
+          766,
+          0,
+          14,
+          524
+        ],
+        "scroll_value": 714,
+        "scroll_maximum": 714,
+        "fully_visible": true,
+        "button_focused": true,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          -227,
+          509,
+          733
+        ],
+        "detail_rect": [
+          239,
+          113,
+          509,
+          393
+        ],
+        "evidence_rect": [
+          248,
+          122,
+          491,
+          100
+        ],
+        "members_rect": [
+          248,
+          329,
+          491,
+          124
+        ]
+      },
+      "album_row": [
+        0,
+        0,
+        167,
+        29
+      ],
+      "album_viewport_height": 139,
+      "clicks": 0,
+      "catalogue_unchanged": true
+    },
+    {
+      "window": [
+        1280,
+        840
+      ],
+      "initial": {
+        "button_rect": [
+          711,
+          889,
+          257,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          995,
+          541
+        ],
+        "scrollbar_rect": [
+          995,
+          0,
+          14,
+          541
+        ],
+        "scroll_value": 0,
+        "scroll_maximum": 413,
+        "fully_visible": false,
+        "button_focused": true,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          395,
+          738,
+          541
+        ],
+        "detail_rect": [
+          702,
+          395,
+          275,
+          541
+        ],
+        "evidence_rect": [
+          711,
+          404,
+          257,
+          100
+        ],
+        "members_rect": [
+          711,
+          691,
+          257,
+          192
+        ]
+      },
+      "wheel_notches": 7,
+      "after_wheel": {
+        "button_rect": [
+          711,
+          476,
+          257,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          995,
+          541
+        ],
+        "scrollbar_rect": [
+          995,
+          0,
+          14,
+          541
+        ],
+        "scroll_value": 413,
+        "scroll_maximum": 413,
+        "fully_visible": true,
+        "button_focused": true,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          -18,
+          738,
+          541
+        ],
+        "detail_rect": [
+          702,
+          -18,
+          275,
+          541
+        ],
+        "evidence_rect": [
+          711,
+          -9,
+          257,
+          100
+        ],
+        "members_rect": [
+          711,
+          278,
+          257,
+          192
+        ]
+      },
+      "before_tab": {
+        "button_rect": [
+          711,
+          536,
+          257,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          995,
+          541
+        ],
+        "scrollbar_rect": [
+          995,
+          0,
+          14,
+          541
+        ],
+        "scroll_value": 353,
+        "scroll_maximum": 413,
+        "fully_visible": false,
+        "button_focused": false,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          42,
+          738,
+          541
+        ],
+        "detail_rect": [
+          702,
+          42,
+          275,
+          541
+        ],
+        "evidence_rect": [
+          711,
+          51,
+          257,
+          100
+        ],
+        "members_rect": [
+          711,
+          338,
+          257,
+          192
+        ]
+      },
+      "after_tab": {
+        "button_rect": [
+          711,
+          476,
+          257,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          995,
+          541
+        ],
+        "scrollbar_rect": [
+          995,
+          0,
+          14,
+          541
+        ],
+        "scroll_value": 413,
+        "scroll_maximum": 413,
+        "fully_visible": true,
+        "button_focused": true,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          -18,
+          738,
+          541
+        ],
+        "detail_rect": [
+          702,
+          -18,
+          275,
+          541
+        ],
+        "evidence_rect": [
+          711,
+          -9,
+          257,
+          100
+        ],
+        "members_rect": [
+          711,
+          278,
+          257,
+          192
+        ]
+      },
+      "album_row": [
+        0,
+        0,
+        167,
+        29
+      ],
+      "album_viewport_height": 139,
+      "clicks": 0,
+      "catalogue_unchanged": true
+    },
+    {
+      "window": [
+        1920,
+        1080
+      ],
+      "initial": {
+        "button_rect": [
+          1093,
+          889,
+          486,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          1606,
+          781
+        ],
+        "scrollbar_rect": [
+          1606,
+          0,
+          14,
+          781
+        ],
+        "scroll_value": 0,
+        "scroll_maximum": 173,
+        "fully_visible": false,
+        "button_focused": true,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          395,
+          1349,
+          541
+        ],
+        "detail_rect": [
+          1084,
+          395,
+          504,
+          541
+        ],
+        "evidence_rect": [
+          1093,
+          404,
+          486,
+          180
+        ],
+        "members_rect": [
+          1093,
+          691,
+          486,
+          192
+        ]
+      },
+      "wheel_notches": 3,
+      "after_wheel": {
+        "button_rect": [
+          1093,
+          716,
+          486,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          1606,
+          781
+        ],
+        "scrollbar_rect": [
+          1606,
+          0,
+          14,
+          781
+        ],
+        "scroll_value": 173,
+        "scroll_maximum": 173,
+        "fully_visible": true,
+        "button_focused": true,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          222,
+          1349,
+          541
+        ],
+        "detail_rect": [
+          1084,
+          222,
+          504,
+          541
+        ],
+        "evidence_rect": [
+          1093,
+          231,
+          486,
+          180
+        ],
+        "members_rect": [
+          1093,
+          518,
+          486,
+          192
+        ]
+      },
+      "before_tab": {
+        "button_rect": [
+          1093,
+          776,
+          486,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          1606,
+          781
+        ],
+        "scrollbar_rect": [
+          1606,
+          0,
+          14,
+          781
+        ],
+        "scroll_value": 113,
+        "scroll_maximum": 173,
+        "fully_visible": false,
+        "button_focused": false,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          282,
+          1349,
+          541
+        ],
+        "detail_rect": [
+          1084,
+          282,
+          504,
+          541
+        ],
+        "evidence_rect": [
+          1093,
+          291,
+          486,
+          180
+        ],
+        "members_rect": [
+          1093,
+          578,
+          486,
+          192
+        ]
+      },
+      "after_tab": {
+        "button_rect": [
+          1093,
+          716,
+          486,
+          38
+        ],
+        "viewport_rect": [
+          0,
+          0,
+          1606,
+          781
+        ],
+        "scrollbar_rect": [
+          1606,
+          0,
+          14,
+          781
+        ],
+        "scroll_value": 173,
+        "scroll_maximum": 173,
+        "fully_visible": true,
+        "button_focused": true,
+        "button_enabled": true,
+        "content_split_rect": [
+          239,
+          222,
+          1349,
+          541
+        ],
+        "detail_rect": [
+          1084,
+          222,
+          504,
+          541
+        ],
+        "evidence_rect": [
+          1093,
+          231,
+          486,
+          180
+        ],
+        "members_rect": [
+          1093,
+          518,
+          486,
+          192
+        ]
+      },
+      "album_row": [
+        0,
+        0,
+        167,
+        29
+      ],
+      "album_viewport_height": 153,
+      "clicks": 0,
+      "catalogue_unchanged": true
+    }
+  ],
+  "action_activations": 0,
+  "catalogue_unchanged": true,
+  "actor_empty": true,
+  "synthetic_catalogue_sha256": "a30484e687a16cd9fc17c08c09a019d7bed7e5bf63a60f824302486d4199b3ce",
+  "capture_parent_head": "1f046803ad670b5315395734cb2888ae6274e45a",
+  "source_worktree_modified": true
+}

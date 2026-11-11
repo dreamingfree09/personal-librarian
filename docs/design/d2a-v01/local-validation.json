@@ -1,0 +1,36 @@
+{
+  "reviewed_head": "1760362ca7d6276ab8f2bb35c223ddffd7541062",
+  "source_commit": "12fac6f2e2ade0e36f6cf2497cb39210df623d7c",
+  "focused": {
+    "tests": 90,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "process_exit": 0,
+    "observer_exit": 0,
+    "seconds": 16.991
+  },
+  "local_full": {
+    "summary": [
+      "Ran 388 tests in 115.170s",
+      "FAILED (errors=2, skipped=4)"
+    ],
+    "process_exit": 1,
+    "observer_exit": 1,
+    "timed_out": false,
+    "errors": [
+      "test_linked_cache_is_not_read: WinError 1314",
+      "test_preference_file_links_neither_read_nor_write_external_content: WinError 1314"
+    ],
+    "qualification": "Local Python 3.13.1 / Qt 6.11.2 / Pillow 12.3.0; not qualified hosted runtime"
+  },
+  "original_D2A_evidence": "UNCHANGED",
+  "native_interactive_scaling": "UNVERIFIED",
+  "supplementary_preexisting_finding": {
+    "width": 1040,
+    "outer_viewport_height": 527,
+    "logical_remove_button_bottom": 545,
+    "reviewed_and_corrected_identical": true,
+    "scope": "Recorded; not altered as part of V01"
+  }
+}

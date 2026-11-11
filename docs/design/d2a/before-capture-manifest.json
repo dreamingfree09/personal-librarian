@@ -1,0 +1,43 @@
+{
+  "label": "before",
+  "source_commit": "ad26c9b3c2d8d33188b1e97b4bbb38c368100bef",
+  "source_files": {
+    "main_window.py": "7cd6ad80bc5e0bd38fd9006bcc8ffe15214ed605a84c8bb70081ddfd94745207",
+    "library_page.py": "b4ea89be8e96a0be591665f4f0e2581d77baa57ac1b3938ea1cb53badc4f05a5"
+  },
+  "python": "3.13.1",
+  "qt": "6.11.2",
+  "platform": "offscreen",
+  "pid": 133460,
+  "native_display_scaling": "UNVERIFIED",
+  "catalogue_unchanged": true,
+  "source_data": "generated disposable images only",
+  "captures": [
+    {
+      "file": "before-overview-1280.png",
+      "viewport": [
+        1280,
+        840
+      ],
+      "rendered": [
+        1280,
+        882
+      ],
+      "sha256": "cb3ff0c707153d480f4007d6d7536b8839375a1fb9308e2661bbe22bef42f4a8",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    },
+    {
+      "file": "before-library-years-1280.png",
+      "viewport": [
+        1280,
+        840
+      ],
+      "rendered": [
+        1280,
+        882
+      ],
+      "sha256": "11e021dceefd644a313307fceb67027d8174c28b9657e58dad132b77f367bc36",
+      "label": "OFFSCREEN QT PROTOTYPE - SYNTHETIC DATA"
+    }
+  ]
+}
