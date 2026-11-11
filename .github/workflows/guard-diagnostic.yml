@@ -1,0 +1,36 @@
+name: Bounded retired guard timing
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - tools/diagnose_retired_guard.py
+      - tools/retired_guard_script.sha256
+      - .github/workflows/guard-diagnostic.yml
+permissions:
+  contents: read
+jobs:
+  timings:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.13.16', '3.13.17']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Observe six bounded launches
+        shell: pwsh
+        run: |
+          python -X faulthandler -u tools/diagnose_retired_guard.py
+          $result = $LASTEXITCODE
+          Write-Output "Guard diagnostic LASTEXITCODE=$result"
+          exit $result
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: guard-timing-${{ matrix.python }}
+          path: tmp/guard-diagnostic/
+          retention-days: 14
